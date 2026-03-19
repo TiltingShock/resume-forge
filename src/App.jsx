@@ -525,204 +525,235 @@ function generatePDFFromData(resumeData) {
   const doc = new jsPDF({ unit: "pt", format: "letter" });
   const W = doc.internal.pageSize.getWidth(); // 612
   const H = doc.internal.pageSize.getHeight(); // 792
-  const mL = 46; // left margin
-  const mR = 46; // right margin
-  const mTop = 40;
-  const mBot = 40;
+  const mL = 52;
+  const mR = 52;
+  const mBot = 44;
   const contentW = W - mL - mR;
-  let y = mTop;
-
-  // ── Helpers ──
-
-  const canFit = (needed) => y + needed <= H - mBot;
+  let y = 0;
 
   const newPageIfNeeded = (needed) => {
-    if (!canFit(needed)) { doc.addPage(); y = mTop; }
+    if (y + needed > H - mBot) { doc.addPage(); y = 44; }
   };
 
-  const drawText = (text, x, fontSize, style, color, maxWidth, align) => {
-    doc.setFontSize(fontSize);
-    doc.setFont("helvetica", style || "normal");
-    doc.setTextColor(...(color || [40, 40, 40]));
-    const lines = doc.splitTextToSize(String(text || ""), maxWidth || contentW);
-    lines.forEach((line) => {
-      newPageIfNeeded(fontSize * 1.2);
-      if (align === "center") doc.text(line, W / 2, y, { align: "center" });
-      else if (align === "right") doc.text(line, W - mR, y, { align: "right" });
-      else doc.text(line, x, y);
-      y += fontSize * 1.2;
-    });
-  };
+  // ═══════════════════════════════════════════════════
+  // HEADER BLOCK — light grey background with name, subtitle, contact
+  // ═══════════════════════════════════════════════════
+  const headerH = 108;
+  doc.setFillColor(245, 245, 245);
+  doc.rect(0, 0, W, headerH, "F");
 
-  const sectionHeading = (title) => {
-    newPageIfNeeded(20);
-    y += 5;
-    doc.setFontSize(8.5);
-    doc.setFont("helvetica", "bold");
-    doc.setTextColor(26, 39, 68);
-    doc.text(title.toUpperCase(), mL, y);
-    y += 3.5;
-    doc.setDrawColor(26, 39, 68);
-    doc.setLineWidth(0.6);
-    doc.line(mL, y, W - mR, y);
-    y += 7;
-  };
-
-  const bulletPoint = (text, fontSize) => {
-    const sz = fontSize || 8.5;
-    const indent = mL + 8;
-    const bMaxW = W - mR - indent;
-    doc.setFontSize(sz);
-    doc.setFont("helvetica", "normal");
-    doc.setTextColor(45, 45, 45);
-    const lines = doc.splitTextToSize(String(text || ""), bMaxW);
-
-    // Don't split a bullet across pages — if it won't fit, start a new page
-    const totalHeight = lines.length * (sz * 1.2) + 1.5;
-    newPageIfNeeded(totalHeight);
-
-    lines.forEach((line, i) => {
-      if (i === 0) {
-        doc.setFontSize(5.5);
-        doc.text("\u2022", mL + 1.5, y - 0.5);
-        doc.setFontSize(sz);
-      }
-      doc.text(line, indent, y);
-      y += sz * 1.2;
-    });
-    y += 1.5;
-  };
-
-  // ── Name ──
-  doc.setFontSize(18);
+  // Name — large, bold, centered
+  y = 36;
+  doc.setFontSize(22);
   doc.setFont("helvetica", "bold");
-  doc.setTextColor(26, 39, 68);
-  doc.text(resumeData.name || "Name", W / 2, y, { align: "center" });
-  y += 14;
+  doc.setTextColor(30, 30, 30);
+  doc.text(resumeData.name || "Your Name", W / 2, y, { align: "center" });
 
-  // ── Contact — split intelligently into multiple lines if needed ──
+  // Subtitle line — extract a title if the summary starts with one, or use first skill cluster
+  y += 18;
+  const subtitle = resumeData.summary
+    ? resumeData.summary.split(/[.!]/)[0].substring(0, 80)
+    : resumeData.skills?.slice(0, 3).join(" | ") || "";
+  if (subtitle) {
+    doc.setFontSize(10);
+    doc.setFont("helvetica", "normal");
+    doc.setTextColor(80, 80, 80);
+    doc.text(subtitle, W / 2, y, { align: "center" });
+  }
+
+  // Contact info — split into two centered lines in the header
   if (resumeData.contact) {
-    const raw = resumeData.contact;
-    // Split on | or common delimiters, trim each part
-    const parts = raw.split(/[|,]/).map(p => p.trim()).filter(Boolean);
+    const parts = resumeData.contact.split(/[|]/).map(p => p.trim()).filter(Boolean);
+    y += 16;
+    doc.setFontSize(8.5);
+    doc.setFont("helvetica", "italic");
+    doc.setTextColor(90, 90, 90);
 
-    if (parts.length > 0) {
-      doc.setFontSize(8);
-      doc.setFont("helvetica", "normal");
-      doc.setTextColor(100, 100, 100);
-
-      // Try to fit on one line; if too wide, split into two rows
-      const oneLine = parts.join("  |  ");
-      const oneLineWidth = doc.getTextWidth(oneLine);
-
-      if (oneLineWidth <= contentW) {
-        doc.text(oneLine, W / 2, y, { align: "center" });
-        y += 10;
-      } else {
-        // Split roughly in half
-        const mid = Math.ceil(parts.length / 2);
-        const row1 = parts.slice(0, mid).join("  |  ");
-        const row2 = parts.slice(mid).join("  |  ");
-        doc.text(row1, W / 2, y, { align: "center" });
-        y += 10;
-        doc.text(row2, W / 2, y, { align: "center" });
-        y += 10;
-      }
+    if (parts.length <= 3) {
+      doc.text(parts.join("  |  "), W / 2, y, { align: "center" });
+    } else {
+      const mid = Math.ceil(parts.length / 2);
+      doc.text(parts.slice(0, mid).join("  |  "), W / 2, y, { align: "center" });
+      y += 11;
+      doc.text(parts.slice(mid).join("  |  "), W / 2, y, { align: "center" });
     }
   }
 
-  // ── Top divider ──
-  y += 2;
-  doc.setDrawColor(26, 39, 68);
-  doc.setLineWidth(0.8);
-  doc.line(mL, y, W - mR, y);
-  y += 8;
+  y = headerH + 14;
 
-  // ── Professional Summary ──
+  // ═══════════════════════════════════════════════════
+  // SUMMARY — paragraph below header, no section title
+  // ═══════════════════════════════════════════════════
   if (resumeData.summary) {
-    sectionHeading("Professional Summary");
-    drawText(resumeData.summary, mL, 8.5, "normal", [45, 45, 45], contentW);
-    y += 2;
+    doc.setFontSize(9);
+    doc.setFont("helvetica", "normal");
+    doc.setTextColor(50, 50, 50);
+    const summaryLines = doc.splitTextToSize(resumeData.summary, contentW);
+    summaryLines.forEach((line) => {
+      newPageIfNeeded(11);
+      doc.text(line, mL, y);
+      y += 11;
+    });
+    y += 6;
   }
 
-  // ── Skills — compact, wrapping naturally ──
-  if (resumeData.skills?.length) {
-    sectionHeading("Skills");
-    const skillsLine = resumeData.skills.join("  \u2022  ");
-    drawText(skillsLine, mL, 8.5, "normal", [45, 45, 45], contentW);
-    y += 2;
-  }
+  // ═══════════════════════════════════════════════════
+  // SECTION HEADING HELPER — large bold title with bottom border
+  // ═══════════════════════════════════════════════════
+  const sectionTitle = (title) => {
+    newPageIfNeeded(28);
+    y += 4;
+    doc.setFontSize(14);
+    doc.setFont("helvetica", "bold");
+    doc.setTextColor(30, 30, 30);
+    doc.text(title, mL, y);
+    y += 5;
+    doc.setDrawColor(200, 200, 200);
+    doc.setLineWidth(0.5);
+    doc.line(mL, y, W - mR, y);
+    y += 10;
+  };
 
-  // ── Experience ──
+  // ═══════════════════════════════════════════════════
+  // WORK EXPERIENCE
+  // ═══════════════════════════════════════════════════
   if (resumeData.experience?.length) {
-    sectionHeading("Experience");
-    resumeData.experience.forEach((exp) => {
-      // Estimate space needed for job header + at least one bullet
-      newPageIfNeeded(40);
+    sectionTitle("Work Experience");
 
-      // Title + Company
-      const titleText = `${exp.title || ""}${exp.company ? " \u2014 " + exp.company : ""}`;
-      doc.setFontSize(9.5);
+    resumeData.experience.forEach((exp) => {
+      // Ensure job header + at least 2 bullets fit
+      newPageIfNeeded(60);
+
+      // Job Title — bold, with dates right-aligned on same line
+      doc.setFontSize(10.5);
       doc.setFont("helvetica", "bold");
       doc.setTextColor(30, 30, 30);
 
-      // Dates on the right
       if (exp.dates) {
-        // Measure dates width to avoid overlap
-        doc.setFontSize(8);
-        doc.setFont("helvetica", "italic");
-        const datesWidth = doc.getTextWidth(exp.dates);
-        const titleMaxW = contentW - datesWidth - 12;
-
-        // Draw title (possibly wrapped to avoid dates)
-        doc.setFontSize(9.5);
-        doc.setFont("helvetica", "bold");
-        doc.setTextColor(30, 30, 30);
-        const titleLines = doc.splitTextToSize(titleText, titleMaxW);
-        titleLines.forEach((line, i) => {
-          doc.text(line, mL, y);
-          if (i === 0) {
-            doc.setFontSize(8);
-            doc.setFont("helvetica", "italic");
-            doc.setTextColor(110, 110, 110);
-            doc.text(exp.dates, W - mR, y, { align: "right" });
-            doc.setFontSize(9.5);
-            doc.setFont("helvetica", "bold");
-            doc.setTextColor(30, 30, 30);
-          }
-          y += 11;
-        });
-      } else {
-        doc.text(titleText, mL, y);
-        y += 11;
+        doc.setFontSize(9);
+        doc.setFont("helvetica", "normal");
+        doc.setTextColor(90, 90, 90);
+        doc.text(exp.dates, W - mR, y, { align: "right" });
       }
 
-      y += 1;
+      doc.setFontSize(10.5);
+      doc.setFont("helvetica", "bold");
+      doc.setTextColor(30, 30, 30);
+      const titleMaxW = exp.dates ? contentW - doc.getTextWidth(exp.dates) - 16 : contentW;
+      const titleLines = doc.splitTextToSize(exp.title || "", titleMaxW);
+      titleLines.forEach((line) => {
+        doc.text(line, mL, y);
+        y += 13;
+      });
+
+      // Company — italic, on its own line below the title
+      if (exp.company) {
+        doc.setFontSize(9);
+        doc.setFont("helvetica", "italic");
+        doc.setTextColor(100, 100, 100);
+        doc.text(exp.company, mL, y);
+        y += 12;
+      }
+
+      y += 2;
 
       // Bullets
       if (exp.bullets?.length) {
-        exp.bullets.forEach((b) => bulletPoint(b));
+        exp.bullets.forEach((b) => {
+          const sz = 9;
+          const indent = mL + 14;
+          const bMaxW = W - mR - indent;
+          doc.setFontSize(sz);
+          doc.setFont("helvetica", "normal");
+          doc.setTextColor(50, 50, 50);
+          const lines = doc.splitTextToSize(String(b || ""), bMaxW);
+
+          // Keep bullet together
+          const totalH = lines.length * 11.5 + 2;
+          newPageIfNeeded(totalH);
+
+          lines.forEach((line, i) => {
+            if (i === 0) {
+              doc.setFontSize(6);
+              doc.setTextColor(50, 50, 50);
+              doc.text("\u2022", mL + 5, y);
+              doc.setFontSize(sz);
+            }
+            doc.text(line, indent, y);
+            y += 11.5;
+          });
+          y += 2;
+        });
       }
-      y += 3;
+
+      y += 6;
     });
   }
 
-  // ── Education ──
+  // ═══════════════════════════════════════════════════
+  // CORE SKILLS
+  // ═══════════════════════════════════════════════════
+  if (resumeData.skills?.length) {
+    sectionTitle("Core Skills");
+    doc.setFontSize(9);
+    doc.setFont("helvetica", "normal");
+    doc.setTextColor(50, 50, 50);
+    const skillsText = resumeData.skills.join(", ");
+    const skillLines = doc.splitTextToSize(skillsText, contentW);
+    skillLines.forEach((line) => {
+      newPageIfNeeded(12);
+      doc.text(line, mL, y);
+      y += 11.5;
+    });
+    y += 4;
+  }
+
+  // ═══════════════════════════════════════════════════
+  // EDUCATION — school bold, degree indented below
+  // ═══════════════════════════════════════════════════
   if (resumeData.education?.length) {
-    sectionHeading("Education");
+    sectionTitle("Education");
     resumeData.education.forEach((ed) => {
-      newPageIfNeeded(14);
-      const edText = `${ed.degree || ""}${ed.school ? " \u2014 " + ed.school : ""}${ed.year ? " (" + ed.year + ")" : ""}`;
-      drawText(edText, mL, 8.5, "normal", [45, 45, 45], contentW);
-      y += 1;
+      newPageIfNeeded(30);
+
+      // School name bold, date right-aligned
+      doc.setFontSize(10);
+      doc.setFont("helvetica", "bold");
+      doc.setTextColor(30, 30, 30);
+      doc.text(ed.school || "", mL, y);
+
+      if (ed.year) {
+        doc.setFontSize(9);
+        doc.setFont("helvetica", "normal");
+        doc.setTextColor(90, 90, 90);
+        doc.text(ed.year, W - mR, y, { align: "right" });
+      }
+      y += 13;
+
+      // Degree indented below
+      if (ed.degree) {
+        doc.setFontSize(9);
+        doc.setFont("helvetica", "normal");
+        doc.setTextColor(70, 70, 70);
+        doc.text(ed.degree, mL + 10, y);
+        y += 14;
+      }
     });
+    y += 2;
   }
 
-  // ── Certifications ──
+  // ═══════════════════════════════════════════════════
+  // CERTIFICATES — name bold, issuer italic below
+  // ═══════════════════════════════════════════════════
   if (resumeData.certifications?.length && resumeData.certifications.some((c) => c)) {
-    sectionHeading("Certifications");
+    sectionTitle("Certificates");
     resumeData.certifications.filter((c) => c).forEach((cert) => {
-      bulletPoint(cert, 8.5);
+      newPageIfNeeded(16);
+      doc.setFontSize(9.5);
+      doc.setFont("helvetica", "bold");
+      doc.setTextColor(30, 30, 30);
+      doc.text(cert, mL, y);
+      y += 13;
     });
   }
 
