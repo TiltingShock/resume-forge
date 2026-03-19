@@ -446,7 +446,7 @@ Respond with ONLY a JSON object (no markdown, no backticks, no commentary) in th
 }`;
 
   try {
-    setStatus("Generating optimized resume with AI...");
+    setStatus("Pass 1/2: ATS keyword optimization...");
     const response = await fetch("/api/claude", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -459,12 +459,73 @@ Respond with ONLY a JSON object (no markdown, no backticks, no commentary) in th
     const data = await response.json();
     const text = data.content?.map((c) => c.text || "").join("") || "";
     const cleaned = text.replace(/```json|```/g, "").trim();
-    return JSON.parse(cleaned);
+    const atsResult = JSON.parse(cleaned);
+
+    // ── PASS 2: Contextual narrative refinement ──
+    setStatus("Pass 2/2: Contextual fit & narrative refinement...");
+    try {
+      const refined = await contextualRefinement(atsResult, jdData);
+      return refined;
+    } catch (err2) {
+      console.warn("Contextual pass failed, using ATS-only result:", err2);
+      return atsResult;
+    }
   } catch (err) {
     console.error("AI generation failed, using fallback:", err);
     setStatus("Using local optimization...");
     return fallbackGenerate(bestResume, allResumes, jdData, scores, answers);
   }
+}
+
+// ─── Pass 2: Contextual Narrative Refinement ────────────────────────────────
+
+async function contextualRefinement(atsResume, jdData) {
+  const refinementPrompt = `You are a senior career strategist. You've been given a resume that's already been ATS-optimized with the right keywords. Now your job is the SECOND PASS: make this resume tell a compelling narrative story that positions this candidate as the ideal fit for this specific role.
+
+THE FULL JOB DESCRIPTION:
+${jdData.raw.substring(0, 4000)}
+
+THE ATS-OPTIMIZED RESUME (already has good keywords):
+${JSON.stringify(atsResume, null, 2)}
+
+YOUR TASK — CONTEXTUAL REFINEMENT:
+
+1. SUMMARY: Rewrite to directly address what this JD is REALLY asking for. Don't just list skills — tell a story. If the JD wants someone who "owns outcomes and works hard to deliver them," the summary should demonstrate that mindset, not just mention keywords. Connect the candidate's specific background to the role's core mission.
+
+2. BULLET REFRAMING: Don't change the facts, but reframe HOW each bullet is presented:
+   - Identify the JD's underlying themes (e.g., ownership, scale, speed, customer obsession, system building, team leadership, pressure tolerance)
+   - For each bullet, emphasize the angle that maps to those themes
+   - Example: If the JD values "building systems at scale" and the bullet says "Managed 35 customer service agents" → reframe to "Built and scaled a 35-agent customer service operation across live chat, phone, and escalation queues, designing scheduling systems and real-time coverage models that maintained quality under high volume"
+   - Move the most role-relevant bullets to the TOP of each job
+
+3. BULLET ORDERING: Within each job, reorder bullets so the ones that most directly demonstrate fit for THIS specific role appear first. The first bullet a recruiter reads should make them think "this person gets it."
+
+4. SKILLS ORDERING: Reorder skills so the ones most central to this JD's themes appear first — not just keyword matches, but the skills that signal "I can do exactly what you need."
+
+5. REMOVE AWKWARD KEYWORD STUFFING: If any bullets from the ATS pass feel forced or unnatural (keywords jammed in where they don't belong), smooth them out. Natural language > keyword density.
+
+CRITICAL RULES:
+- DO NOT change any job titles, company names, dates, education, or certifications
+- DO NOT fabricate new experience or metrics
+- DO NOT add new bullet points — only rewrite and reorder existing ones
+- DO NOT remove any jobs or sections
+- Keep the same JSON structure exactly
+
+Respond with ONLY the refined JSON object (no markdown, no backticks, no commentary). Same format as the input.`;
+
+  const response = await fetch("/api/claude", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      model: "claude-sonnet-4-20250514",
+      max_tokens: 4096,
+      messages: [{ role: "user", content: refinementPrompt }]
+    })
+  });
+  const data = await response.json();
+  const text = data.content?.map((c) => c.text || "").join("") || "";
+  const cleaned = text.replace(/```json|```/g, "").trim();
+  return JSON.parse(cleaned);
 }
 
 function fallbackGenerate(bestResume, allResumes, jdData, scores, answers) {
