@@ -4,7 +4,6 @@ import * as pdfjsLib from "pdfjs-dist";
 import pdfjsWorker from "pdfjs-dist/build/pdf.worker.mjs?url";
 
 // ─── Constants & Helpers ────────────────────────────────────────────────────
-
 const STORAGE_KEY = "resume-optimizer-data";
 const MAX_RESUMES = 5;
 
@@ -13,6 +12,32 @@ const ATS_KEYWORDS_BY_CATEGORY = {
   soft: ["leadership", "communication", "collaboration", "problem-solving", "teamwork", "analytical", "adaptable", "detail-oriented", "organized", "self-motivated"],
   action: ["achieved", "implemented", "developed", "managed", "designed", "created", "led", "optimized", "delivered", "improved", "launched", "built", "streamlined", "analyzed", "executed", "spearheaded", "orchestrated", "pioneered"]
 };
+
+// Helper to clean text before PDF generation
+function cleanTextForPDF(text) {
+  if (!text) return "";
+  return String(text)
+    // Replace em dashes, en dashes, and other special dashes with regular hyphen
+    .replace(/[\u2014\u2013\u2012\u00AD]/g, "-")
+    // Replace smart quotes with straight quotes
+    .replace(/[\u2018\u2019]/g, "'")
+    .replace(/[\u201C\u201D]/g, '"')
+    // Replace ellipsis with three periods
+    .replace(/\u2026/g, "...")
+    // Replace accented characters that might cause issues
+    .replace(/[\u00E0-\u00EF]/g, (c) => String.fromCharCode(c.charCodeAt(0) - 224 + 97)) // à-ï -> a-i
+    .replace(/[\u00F0-\u00FF]/g, (c) => String.fromCharCode(c.charCodeAt(0) - 224 + 112)) // ð-ÿ -> p-ÿ
+    // Fix common ligatures
+    .replace(/fi/g, "fi")
+    .replace(/fl/g, "fl")
+    .replace(/ff/g, "ff")
+    .replace(/ffi/g, "ffi")
+    .replace(/ffl/g, "ffl")
+    .replace(/ﬁ/g, "fi")
+    .replace(/ﬂ/g, "fl")
+    .replace(/ﬃ/g, "ffi")
+    .replace(/ﬄ/g, "ffl");
+}
 
 function extractTextFromPDF(file) {
   return new Promise((resolve, reject) => {
@@ -26,7 +51,7 @@ function extractTextFromPDF(file) {
           const page = await pdf.getPage(i);
           const content = await page.getTextContent();
           const pageText = content.items.map((item) => item.str).join(" ");
-          fullText += pageText + "\n";
+          fullText += pageText + " ";
         }
         resolve(fullText.trim());
       } catch (err) {
@@ -56,88 +81,23 @@ function extractKeywords(text) {
   // Massive stopword list: generic English, JD filler, culture language, pronouns, vague nouns
   const stopwords = new Set([
     // Common English
-    "the", "and", "for", "are", "but", "not", "you", "all", "can", "had", "her", "was",
-    "one", "our", "out", "has", "have", "with", "this", "that", "from", "they", "will",
-    "been", "each", "make", "like", "long", "very", "when", "what", "were", "there",
-    "about", "which", "would", "their", "more", "some", "them", "than", "other", "into",
-    "also", "able", "work", "year", "must", "should", "could", "being", "well", "such",
-    "your", "who", "how", "its", "may", "over", "after", "before", "most", "only",
-    "just", "where", "those", "these", "then", "need", "needs", "both", "way", "want",
-    "come", "made", "find", "back", "many", "much", "great", "good", "best", "new",
-    "first", "last", "own", "part", "take", "get", "high", "low", "big", "small",
-    "help", "keep", "still", "here", "every", "even", "next", "same", "another",
-    "know", "think", "see", "look", "give", "use", "tell", "because", "thing", "things",
-    "through", "between", "under", "around", "while", "during", "including", "across",
-    "along", "within", "without", "toward", "towards", "among", "against", "upon",
-    "does", "doing", "done", "goes", "going", "gone", "says", "said", "feel", "feels",
-    "felt", "means", "meant", "show", "shows", "shown", "turn", "turns", "turned",
-    "left", "right", "whether", "become", "becomes", "became", "let", "lets",
-    "wants", "wants", "trying", "tried", "simple", "simply", "sounds", "typical",
-    "comes", "coming", "receive", "receives", "deliver", "delivers", "expect", "expects",
-    "identify", "stress", "wrong", "matters", "matter", "care", "cared", "leave", "leaves",
-    "handle", "handles", "handling", "compromise", "compromising", "requires", "requiring",
-    "thousands", "hundreds", "millions",
+    "the", "and", "for", "are", "but", "not", "you", "all", "can", "had", "her", "was", "one", "our", "out", "has", "have", "with", "this", "that", "from", "they", "will", "been", "each", "make", "like", "long", "very", "when", "what", "were", "there", "about", "which", "would", "their", "more", "some", "them", "than", "other", "into", "also", "able", "work", "year", "must", "should", "could", "being", "well", "such", "your", "who", "how", "its", "may", "over", "after", "before", "most", "only", "just", "where", "those", "these", "then", "need", "needs", "both", "way", "want", "come", "made", "find", "back", "many", "much", "great", "good", "best", "new", "first", "last", "own", "part", "take", "get", "high", "low", "big", "small", "help", "keep", "still", "here", "every", "even", "next", "same", "another", "know", "think", "see", "look", "give", "use", "tell", "because", "thing", "things", "through", "between", "under", "around", "while", "during", "including", "across", "along", "within", "without", "toward", "towards", "among", "against", "upon", "does", "doing", "done", "goes", "going", "gone", "says", "said", "feel", "feels", "felt", "means", "meant", "show", "shows", "shown", "turn", "turns", "turned", "left", "right", "whether", "become", "becomes", "became", "let", "lets", "wants", "wants", "trying", "tried", "simple", "simply", "sounds", "typical", "comes", "coming", "receive", "receives", "deliver", "delivers", "expect", "expects", "identify", "stress", "wrong", "matters", "matter", "care", "cared", "leave", "leaves", "handle", "handles", "handling", "compromise", "compromising", "requires", "requiring", "thousands", "hundreds", "millions",
     // Pronouns and determiners
-    "someone", "anyone", "everyone", "something", "anything", "everything",
-    "nobody", "nothing", "whoever", "whatever", "somewhere", "anywhere",
-    "themselves", "yourself", "ourselves", "himself", "herself", "itself",
+    "someone", "anyone", "everyone", "something", "anything", "everything", "nobody", "nothing", "whoever", "whatever", "somewhere", "anywhere", "themselves", "yourself", "ourselves", "himself", "herself", "itself",
     // JD filler language
-    "clear", "clearly", "strong", "strongly", "ensure", "ability", "including",
-    "related", "based", "using", "working", "looking", "understanding", "building",
-    "creating", "making", "taking", "providing", "supporting", "leading", "developing",
-    "managing", "delivering", "driving", "growing", "improving", "maintaining",
-    "role", "roles", "position", "team", "teams", "company", "job", "candidate",
-    "ideal", "preferred", "required", "plus", "bonus", "equivalent", "similar",
-    "experience", "experiences", "responsible", "responsibilities", "opportunity",
-    "environment", "environments", "organization", "organizations", "success",
-    "successful", "effectively", "excellent", "exceptional", "proven", "track",
-    "record", "demonstrated", "deep", "solid", "relevant", "minimum", "least",
-    "highly", "passionate", "eager", "comfortable", "familiar", "proficient",
-    "translate", "vision", "delivery", "lead", "owner", "strong", "development",
+    "clear", "clearly", "strong", "strongly", "ensure", "ability", "including", "related", "based", "using", "working", "looking", "understanding", "building", "creating", "making", "taking", "providing", "supporting", "leading", "developing", "managing", "delivering", "driving", "growing", "improving", "maintaining", "role", "roles", "position", "team", "teams", "company", "job", "candidate", "ideal", "preferred", "required", "plus", "bonus", "equivalent", "similar", "experience", "experiences", "responsible", "responsibilities", "opportunity", "environment", "environments", "organization", "organizations", "success", "successful", "effectively", "excellent", "exceptional", "proven", "track", "record", "demonstrated", "deep", "solid", "relevant", "minimum", "least", "highly", "passionate", "eager", "comfortable", "familiar", "proficient", "translate", "vision", "delivery", "lead", "owner", "strong", "development",
     // Culture/values JD language
-    "believe", "believes", "thrive", "thrives", "obsessed", "raving", "legendary",
-    "mission", "wins", "winning", "excuses", "intense", "motivates", "motivating",
-    "constantly", "constant", "direction", "predictable", "slow", "fast", "faster",
-    "quickly", "early", "hard", "harder", "extreme", "massive", "single",
+    "believe", "believes", "thrive", "thrives", "obsessed", "raving", "legendary", "mission", "wins", "winning", "excuses", "intense", "motivates", "motivating", "constantly", "constant", "direction", "predictable", "slow", "fast", "faster", "quickly", "early", "hard", "harder", "extreme", "massive", "single",
     // Generic nouns that aren't skills
-    "customers", "customer", "people", "person", "friends", "fans", "brand", "brands",
-    "messages", "message", "interaction", "interactions", "answers", "answer",
-    "problems", "problem", "solutions", "solution", "outcome", "outcomes",
-    "systems", "system", "process", "processes", "result", "results",
-    "growth", "volume", "pressure", "quality", "speed", "standard", "standards",
-    "goal", "goals", "advantage", "response", "responses", "ticket", "tickets",
-    "day", "days", "hours", "hour", "time", "times", "level", "levels",
-    "type", "types", "kind", "kinds", "sort", "lots", "bit",
+    "customers", "customer", "people", "person", "friends", "fans", "brand", "brands", "messages", "message", "interaction", "interactions", "answers", "answer", "problems", "problem", "solutions", "solution", "outcome", "outcomes", "systems", "system", "process", "processes", "result", "results", "growth", "volume", "pressure", "quality", "speed", "standard", "standards", "goal", "goals", "advantage", "response", "responses", "ticket", "tickets", "day", "days", "hours", "hour", "time", "times", "level", "levels", "type", "types", "kind", "kinds", "sort", "lots", "bit",
     // "this role" type bigrams
-    "this role", "this is", "that means", "you will", "you are", "we are",
-    "not for", "if you", "what you", "your job", "our goal", "we receive",
-    "sounds like", "looks like", "signing up", "will be", "should feel",
+    "this role", "this is", "that means", "you will", "you are", "we are", "not for", "if you", "what you", "your job", "our goal", "we receive", "sounds like", "looks like", "signing up", "will be", "should feel",
     // JD competency/behavioral verbs that aren't real skills
-    "demonstrates", "demonstrate", "demonstrating", "understands", "understand",
-    "recognizes", "recognize", "approaches", "approach", "contributes", "contribute",
-    "applies", "apply", "aligns", "align", "responds", "respond", "reflects",
-    "supports", "brings", "bring", "fosters", "foster", "advances", "advance",
-    "empowers", "empower", "encourages", "encourage", "anticipates", "anticipate",
-    "communicates", "communicate", "models", "model", "invites", "invite",
-    "honors", "honor", "engages", "engage", "adapts", "adapt", "seeks", "seek",
-    "maintains", "maintain", "upholds", "uphold", "practices", "practice",
-    "regulates", "regulate", "considers", "consider", "proposes", "propose",
-    "evaluates", "evaluate", "plans", "plan",
+    "demonstrates", "demonstrate", "demonstrating", "understands", "understand", "recognizes", "recognize", "approaches", "approach", "contributes", "contribute", "applies", "apply", "aligns", "align", "responds", "respond", "reflects", "reflect", "supports", "support", "brings", "bring", "fosters", "foster", "advances", "advance", "empowers", "empower", "encourages", "encourage", "anticipates", "anticipate", "communicates", "communicate", "models", "model", "invites", "invite", "honors", "honor", "engages", "engage", "adapts", "adapt", "seeks", "seek", "maintains", "maintain", "upholds", "uphold", "practices", "practice", "regulates", "regulate", "considers", "consider", "proposes", "propose", "evaluates", "evaluate", "plans", "plan",
     // Abstract JD nouns that aren't skills
-    "mindset", "curiosity", "humility", "resilience", "openness", "flexibility",
-    "empathy", "trust", "fairness", "transparency", "autonomy", "initiative",
-    "accountability", "honesty", "consistency", "professionalism", "integrity",
-    "awareness", "foresight", "agility", "inclusion", "diversity", "equity",
-    "justice", "safety", "dignity", "respect", "commitment", "responsibility",
-    "collaboration", "engagement", "influence", "purpose", "clarity",
-    "capacity", "capability", "competency", "competencies", "attribute", "attributes",
-    "framework", "frameworks", "principle", "principles", "barrier", "barriers",
-    "legacy", "legacies", "protocol", "protocols", "dynamic", "dynamics",
-    "implication", "implications", "transition", "transitions",
+    "mindset", "curiosity", "humility", "resilience", "openness", "flexibility", "empathy", "trust", "fairness", "transparency", "autonomy", "initiative", "accountability", "honesty", "consistency", "professionalism", "integrity", "awareness", "foresight", "agility", "inclusion", "diversity", "equity", "justice", "safety", "dignity", "respect", "commitment", "responsibility", "collaboration", "engagement", "influence", "purpose", "clarity", "capacity", "capability", "competency", "competencies", "attribute", "attributes", "framework", "frameworks", "principle", "principles", "barrier", "barriers", "legacy", "legacies", "protocol", "protocols", "dynamic", "dynamics", "implication", "implications", "transition", "transitions",
     // Misc JD filler
-    "ongoing", "continuous", "broader", "shared", "meaningful", "practical",
-    "appropriate", "effective", "current", "various", "key", "important",
-    "ready", "grounded", "paid", "volunteer", "asset", "previous"
+    "ongoing", "continuous", "broader", "shared", "meaningful", "practical", "appropriate", "effective", "current", "various", "key", "important", "ready", "grounded", "paid", "volunteer", "asset", "previous"
   ]);
 
   return Object.entries(freq)
@@ -151,7 +111,7 @@ function parseJD(text) {
   const keywords = extractKeywords(text);
   const lower = text.toLowerCase();
   const requirements = [];
-  const lines = text.split(/\n/);
+  const lines = text.split(/ /);
   let inReq = false;
   for (const line of lines) {
     const l = line.trim().toLowerCase();
@@ -159,48 +119,34 @@ function parseJD(text) {
       inReq = true;
       continue;
     }
-    if (inReq && /^\s*$/.test(line)) { inReq = false; continue; }
+    if (inReq && /^\s*$/.test(line)) {
+      inReq = false;
+      continue;
+    }
     if (inReq && /^[\s•\-*]/.test(line)) requirements.push(line.trim().replace(/^[•\-*]\s*/, ""));
   }
+
   const yearsMatch = lower.match(/(\d+)\+?\s*years?\s*(of\s*)?(experience|exp)/);
   const experience = yearsMatch ? parseInt(yearsMatch[1]) : null;
 
   // Filter skills aggressively — remove anything that's clearly not a real skill/technology
   const genericNouns = new Set([
-    "experience", "team", "company", "role", "position", "job", "candidate",
-    "ability", "skills", "years", "knowledge", "level", "type", "time",
-    "day", "people", "person", "place", "everything", "someone", "anyone",
-    "customers", "customer", "friends", "fans", "brand", "brands",
-    "interaction", "interactions", "messages", "message", "answers", "answer",
-    "problems", "problem", "outcome", "outcomes", "result", "results",
-    "ticket", "tickets", "volume", "pressure", "advantage", "excuses",
-    "direction", "keyboard", "emails", "comments", "questions", "issues",
-    "hospitality", "support", "ownership", "accountability",
+    "experience", "team", "company", "role", "position", "job", "candidate", "ability", "skills", "years", "knowledge", "level", "type", "time", "day", "people", "person", "place", "everything", "someone", "anyone", "customers", "customer", "friends", "fans", "brand", "brands", "interaction", "interactions", "messages", "message", "answers", "answer", "problems", "problem", "outcome", "outcomes", "result", "results", "ticket", "tickets", "volume", "pressure", "advantage", "excuses", "direction", "keyboard", "emails", "comments", "questions", "issues", "hospitality", "support", "ownership", "accountability",
     // Competency/behavioral terms
-    "demonstrates", "understands", "recognizes", "approaches", "contributes",
-    "applies", "aligns", "responds", "reflects", "fosters", "advances",
-    "empowers", "encourages", "anticipates", "communicates", "models",
-    "invites", "honors", "engages", "adapts", "seeks", "maintains",
-    "upholds", "practices", "regulates", "considers", "proposes", "evaluates",
+    "demonstrates", "understands", "recognizes", "approaches", "contributes", "applies", "aligns", "responds", "reflects", "fosters", "advances", "communicates", "plans", "seeks", "maintains", "upholds", "practices", "regulates", "considers", "proposes", "evaluates",
     // Abstract nouns from competency frameworks
-    "mindset", "curiosity", "humility", "resilience", "openness", "flexibility",
-    "empathy", "trust", "fairness", "transparency", "autonomy", "initiative",
-    "honesty", "consistency", "professionalism", "integrity", "awareness",
-    "foresight", "agility", "inclusion", "diversity", "equity", "justice",
-    "safety", "dignity", "respect", "commitment", "responsibility",
-    "collaboration", "engagement", "influence", "purpose", "clarity",
-    "capacity", "capability", "competency", "competencies",
+    "mindset", "curiosity", "humility", "resilience", "openness", "flexibility", "empathy", "trust", "fairness", "transparency", "autonomy", "initiative", "honesty", "consistency", "professionalism", "integrity", "awareness", "foresight", "agility", "inclusion", "diversity", "equity", "justice", "safety", "dignity", "respect", "commitment", "responsibility", "collaboration", "engagement", "influence", "purpose", "clarity", "capacity", "capability", "competency", "competencies",
     // Common JD section words
-    "requirements", "qualifications", "duties", "assigned", "other",
-    "reporting", "minimum", "asset", "attribute", "attributes",
+    "requirements", "qualifications", "duties", "assigned", "other", "reporting", "minimum", "asset", "attribute", "attributes",
     // Verbs that look like skills but aren't
     "granting", "grant", "grants"
   ]);
+
   // Additional check: filter out words that are just common English verbs/adjectives
   const verbPatterns = /^(demonstrates?|understands?|recognizes?|approaches?|supports?|ensures?|builds?|creates?|works?|manages?|provides?|maintains?|responds?|contributes?|applies?|fosters?|advances?|communicates?|plans?|seeks?)$/;
-  const skills = keywords.filter((k) =>
-    /[a-z]{2,}/.test(k) && !genericNouns.has(k) && !verbPatterns.test(k) && k.length > 3
-  );
+
+  const skills = keywords.filter((k) => /[a-z]{2,}/.test(k) && !genericNouns.has(k) && !verbPatterns.test(k) && k.length > 3);
+
   return { keywords, skills, requirements, experience, raw: text };
 }
 
@@ -208,21 +154,29 @@ function scoreResume(resumeText, jdData) {
   const lower = resumeText.toLowerCase();
   const matchedKeywords = jdData.keywords.filter((k) => lower.includes(k));
   const keywordScore = Math.min(100, Math.round((matchedKeywords.length / Math.max(jdData.keywords.length, 1)) * 100));
+
   const matchedSkills = jdData.skills.filter((s) => lower.includes(s));
   const skillScore = Math.min(100, Math.round((matchedSkills.length / Math.max(jdData.skills.length, 1)) * 100));
+
   const actionWords = ATS_KEYWORDS_BY_CATEGORY.action.filter((a) => lower.includes(a));
   const actionScore = Math.min(100, Math.round((actionWords.length / 6) * 100));
+
   const hasEmail = /[\w.-]+@[\w.-]+\.\w+/.test(resumeText);
   const hasPhone = /[\d()+\-.\s]{10,}/.test(resumeText);
+
   const sections = ["experience", "education", "skills", "summary", "objective", "projects"];
   const foundSections = sections.filter((s) => lower.includes(s));
   const formatScore = Math.round(((hasEmail ? 25 : 0) + (hasPhone ? 25 : 0) + Math.min(50, foundSections.length * 12.5)));
+
   const wordCount = resumeText.split(/\s+/).length;
   const lengthScore = wordCount > 200 && wordCount < 1200 ? 100 : wordCount > 100 ? 70 : 40;
+
   const overall = Math.round(keywordScore * 0.3 + skillScore * 0.25 + actionScore * 0.15 + formatScore * 0.15 + lengthScore * 0.15);
+
   return {
     overall, keywordScore, skillScore, actionScore, formatScore, lengthScore,
-    matchedKeywords, matchedSkills, missingKeywords: jdData.keywords.filter((k) => !lower.includes(k)).slice(0, 15),
+    matchedKeywords, matchedSkills,
+    missingKeywords: jdData.keywords.filter((k) => !lower.includes(k)).slice(0, 15),
     missingSkills: jdData.skills.filter((s) => !lower.includes(s)).slice(0, 10),
     actionWords, wordCount
   };
@@ -332,13 +286,8 @@ function generateQuestions(jdData, bestScore) {
 // ─── AI-Powered Suggestion Generation ───────────────────────────────────────
 
 async function generateSuggestionsForQuestions(questions, allResumes, jdData, bestScore) {
-  const combinedResumeText = allResumes.map((r, i) =>
-    `=== RESUME ${i + 1}: ${r.name} ===\n${r.text}`
-  ).join("\n\n");
-
-  const questionsFormatted = questions.map((q, i) =>
-    `Question ${i + 1} (id: "${q.id}"): ${q.text}`
-  ).join("\n");
+  const combinedResumeText = allResumes.map((r, i) => `=== RESUME ${i + 1}: ${r.name} === ${r.text}`).join(" ");
+  const questionsFormatted = questions.map((q, i) => `Question ${i + 1} (id: "${q.id}"): ${q.text}`).join(" ");
 
   const prompt = `You are an expert career coach and resume analyst. You have access to ALL of the candidate's resumes and a job description analysis. Your task is to deeply analyze the resume content and generate 3-5 highly specific, personalized suggested answers for each question.
 
@@ -386,11 +335,7 @@ Generate 3-5 suggestions per question. "confidence" should be "high" if directly
     const response = await fetch("/api/claude", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        model: "claude-sonnet-4-20250514",
-        max_tokens: 4096,
-        messages: [{ role: "user", content: prompt }]
-      })
+      body: JSON.stringify({ model: "claude-sonnet-4-20250514", max_tokens: 4096, messages: [{ role: "user", content: prompt }] })
     });
     const data = await response.json();
     const text = data.content?.map((c) => c.text || "").join("") || "";
@@ -405,7 +350,8 @@ Generate 3-5 suggestions per question. "confidence" should be "high" if directly
 function generateFallbackSuggestions(questions, allResumes, jdData, bestScore) {
   const combinedText = allResumes.map((r) => r.text).join(" ");
   const lower = combinedText.toLowerCase();
-  const extractBullets = (text) => text.split(/\n/).filter((l) => /^[\s•\-*]/.test(l) && l.trim().length > 20).map((l) => l.trim().replace(/^[•\-*]\s*/, ""));
+
+  const extractBullets = (text) => text.split(/ /).filter((l) => /^[\s•\-*]/.test(l) && l.trim().length > 20).map((l) => l.trim().replace(/^[•\-*]\s*/, ""));
   const allBullets = allResumes.flatMap((r) => extractBullets(r.text));
   const metricBullets = allBullets.filter((b) => /\d+%|\d+x|\$[\d,]+|\d+ (users|customers|clients|team|members|projects)/.test(b));
   const techTerms = jdData.skills.filter((s) => lower.includes(s));
@@ -414,6 +360,7 @@ function generateFallbackSuggestions(questions, allResumes, jdData, bestScore) {
   return {
     questions: questions.map((q) => {
       const suggestions = [];
+
       if (q.id === "missing_skills") {
         const relevant = allBullets.filter((b) => bestScore.missingSkills.some((s) => b.toLowerCase().includes(s))).slice(0, 2);
         relevant.forEach((b) => suggestions.push({ text: b, source: "From resume experience", confidence: "high" }));
@@ -442,6 +389,7 @@ function generateFallbackSuggestions(questions, allResumes, jdData, bestScore) {
         certs.forEach((c) => suggestions.push({ text: c, source: "Certification from resume", confidence: "high" }));
         suggestions.push({ text: `Worked extensively in [industry/domain], building [type of system] that handled [scale]. Familiar with [relevant compliance/standards].`, source: "Template — add domain specifics", confidence: "low" });
       }
+
       while (suggestions.length < 3) suggestions.push({ text: `[Customize: ${q.text.substring(0, 50)}...]`, source: "Placeholder", confidence: "low" });
       return { id: q.id, suggestions: suggestions.slice(0, 5) };
     })
@@ -454,9 +402,7 @@ async function generateOptimizedResume(bestResume, allResumes, jdData, scores, a
   setStatus("Analyzing resume and job description...");
 
   // Send ALL resume text — no truncation. Combine all resumes so Claude sees everything.
-  const allResumeText = allResumes.map((r, i) =>
-    `=== RESUME ${i + 1}: ${r.name} ===\n${r.text}`
-  ).join("\n\n");
+  const allResumeText = allResumes.map((r, i) => `=== RESUME ${i + 1}: ${r.name} === ${r.text}`).join(" ");
 
   // Use the best-scoring resume as the primary structure
   const prompt = `You are an expert ATS resume optimizer. Your job is to ENHANCE an existing resume for a specific job description — NOT to rewrite it from scratch.
@@ -468,8 +414,9 @@ CRITICAL RULES:
 4. DO NOT drop any jobs or sections — every role in the original resume must appear in the output
 5. If the candidate has multiple resumes, merge the best content from all of them into one cohesive resume
 6. The summary should be rewritten to align with the JD while accurately reflecting the candidate's real background
-7. The skills section should list REAL skills from the resumes, reordered so JD-relevant ones come first, plus any from the questionnaire answers that are genuine
+7. The skills section should list REAL skills from the resumes, reordered so JD-relevant ones come first, plus any from the questionnaire answers that are genuine. LIMIT TO 8 SKILLS MAXIMUM — pick the most relevant ones only
 8. Reorder bullet points within each job so the most JD-relevant ones appear first
+9. IMPORTANT: Use plain ASCII characters only in your output. Do NOT use em dashes (—), en dashes (–), smart quotes (' " ), or any special unicode characters. Use regular hyphens (-) and straight quotes (' and ") instead.
 
 CANDIDATE'S RESUMES (use ALL of this content — do not skip any jobs):
 ${allResumeText}
@@ -478,7 +425,7 @@ JOB DESCRIPTION — KEY SKILLS & KEYWORDS TO WEAVE IN:
 ${jdData.skills.slice(0, 20).join(", ")}
 
 REQUIREMENTS FROM JD:
-${jdData.requirements.slice(0, 8).join("\n")}
+${jdData.requirements.slice(0, 8).join(" ")}
 
 SKILLS CURRENTLY MISSING FROM RESUME (weave in ONLY where truthfully supported):
 ${scores.missingSkills.slice(0, 8).join(", ")}
@@ -486,7 +433,7 @@ ${scores.missingSkills.slice(0, 8).join(", ")}
 YEARS EXPERIENCE REQUIRED: ${jdData.experience || "Not specified"}
 
 CANDIDATE'S QUESTIONNAIRE ANSWERS (use these to enhance bullets and add context):
-${Object.entries(answers).filter(([k, v]) => v?.trim()).map(([k, v]) => `${k}: ${v}`).join("\n")}
+${Object.entries(answers).filter(([k, v]) => v?.trim()).map(([k, v]) => `${k}: ${v}`).join(" ")}
 
 EXAMPLE OF GOOD BULLET REWRITING:
 Original: "Worked with numerous clients in the Web3 space for their project visions"
@@ -506,7 +453,7 @@ Respond with ONLY a JSON object (no markdown, no backticks, no commentary) in th
       "company": "Exact Company Name from resume",
       "dates": "Exact dates from resume",
       "bullets": [
-        "Rewritten bullet 1 — stronger verb, JD keywords woven in, metrics preserved",
+        "Rewritten bullet 1 - stronger verb, JD keywords woven in, metrics preserved",
         "Rewritten bullet 2",
         "Rewritten bullet 3"
       ]
@@ -527,11 +474,7 @@ Respond with ONLY a JSON object (no markdown, no backticks, no commentary) in th
     const response = await fetch("/api/claude", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        model: "claude-sonnet-4-20250514",
-        max_tokens: 4096,
-        messages: [{ role: "user", content: prompt }]
-      })
+      body: JSON.stringify({ model: "claude-sonnet-4-20250514", max_tokens: 4096, messages: [{ role: "user", content: prompt }] })
     });
     const data = await response.json();
     const text = data.content?.map((c) => c.text || "").join("") || "";
@@ -575,20 +518,16 @@ THE ATS-OPTIMIZED RESUME (already has good keywords):
 ${JSON.stringify(atsResume, null, 2)}
 
 YOUR TASK — CONTEXTUAL REFINEMENT:
-
 1. SUMMARY: Rewrite to directly address what this JD is REALLY asking for. Don't just list skills — tell a story. If the JD wants someone who "owns outcomes and works hard to deliver them," the summary should demonstrate that mindset, not just mention keywords. Connect the candidate's specific background to the role's core mission.
-
 2. BULLET REFRAMING: Don't change the facts, but reframe HOW each bullet is presented:
    - Identify the JD's underlying themes (e.g., ownership, scale, speed, customer obsession, system building, team leadership, pressure tolerance)
    - For each bullet, emphasize the angle that maps to those themes
-   - Example: If the JD values "building systems at scale" and the bullet says "Managed 35 customer service agents" → reframe to "Built and scaled a 35-agent customer service operation across live chat, phone, and escalation queues, designing scheduling systems and real-time coverage models that maintained quality under high volume"
+   - Example: If the JD values "building systems at scale" and the bullet says "Managed 35 customer service agents" -> reframe to "Built and scaled a 35-agent customer service operation across live chat, phone, and escalation queues, designing scheduling systems and real-time coverage models that maintained quality under high volume"
    - Move the most role-relevant bullets to the TOP of each job
-
 3. BULLET ORDERING: Within each job, reorder bullets so the ones that most directly demonstrate fit for THIS specific role appear first. The first bullet a recruiter reads should make them think "this person gets it."
-
 4. SKILLS ORDERING: Reorder skills so the ones most central to this JD's themes appear first — not just keyword matches, but the skills that signal "I can do exactly what you need."
-
 5. REMOVE AWKWARD KEYWORD STUFFING: If any bullets from the ATS pass feel forced or unnatural (keywords jammed in where they don't belong), smooth them out. Natural language > keyword density.
+6. IMPORTANT: Use plain ASCII characters only. No em dashes (—), en dashes (–), or smart quotes. Use regular hyphens (-) and straight quotes.
 
 CRITICAL RULES:
 - DO NOT change any job titles, company names, dates, education, or certifications
@@ -602,11 +541,7 @@ Respond with ONLY the refined JSON object (no markdown, no backticks, no comment
   const response = await fetch("/api/claude", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      model: "claude-sonnet-4-20250514",
-      max_tokens: 4096,
-      messages: [{ role: "user", content: refinementPrompt }]
-    })
+    body: JSON.stringify({ model: "claude-sonnet-4-20250514", max_tokens: 4096, messages: [{ role: "user", content: refinementPrompt }] })
   });
   const data = await response.json();
   const text = data.content?.map((c) => c.text || "").join("") || "";
@@ -625,26 +560,26 @@ ${JSON.stringify(resume, null, 2)}
 YOUR EDITING RULES — apply these ruthlessly to the summary and EVERY bullet point:
 
 1. KILL THESE AI-FAVORITE WORDS — replace them every time:
-   - "utilize" / "utilized" → "used" or be more specific
-   - "leverage" / "leveraged" → "used" or the actual verb (built, ran, applied)
-   - "spearheaded" → "led" or "started" or "ran"
-   - "orchestrated" → "coordinated" or "ran" or "organized"
-   - "facilitated" → "ran" or "helped" or "set up"
-   - "endeavor" → cut it
-   - "streamlined" → say what actually changed ("cut processing time" not "streamlined operations")
-   - "synergy" / "synergies" → cut it
-   - "innovative" / "innovated" → say what was actually new
-   - "cutting-edge" → say the actual technology
-   - "robust" → "solid" or "reliable" or just cut it
-   - "comprehensive" → usually unnecessary, cut it or say "full" / "complete"
-   - "strategic" → often filler, cut it unless strategy was literally the job
-   - "cross-functional" → "across teams" or name the actual teams
-   - "stakeholders" → name them (execs, clients, partners, engineers)
-   - "drive" / "drove" (as in "drove results") → say the specific action
-   - "foster" / "fostered" → "built" or "encouraged" or "created"
-   - "enhance" / "enhanced" → say what actually improved and by how much
-   - "ensure" / "ensured" → "made sure" or be more specific
-   - "align" / "aligned" → say what was connected to what
+   - "utilize" / "utilized" -> "used" or be more specific
+   - "leverage" / "leveraged" -> "used" or the actual verb (built, ran, applied)
+   - "spearheaded" -> "led" or "started" or "ran"
+   - "orchestrated" -> "coordinated" or "ran" or "organized"
+   - "facilitated" -> "ran" or "helped" or "set up"
+   - "endeavor" -> cut it
+   - "streamlined" -> say what actually changed ("cut processing time" not "streamlined operations")
+   - "synergy" / "synergies" -> cut it
+   - "innovative" / "innovated" -> say what was actually new
+   - "cutting-edge" -> say the actual technology
+   - "robust" -> "solid" or "reliable" or just cut it
+   - "comprehensive" -> usually unnecessary, cut it or say "full" / "complete"
+   - "strategic" -> often filler, cut it unless strategy was literally the job
+   - "cross-functional" -> "across teams" or name the actual teams
+   - "stakeholders" -> name them (execs, clients, partners, engineers)
+   - "drive" / "drove" (as in "drove results") -> say the specific action
+   - "foster" / "fostered" -> "built" or "encouraged" or "created"
+   - "enhance" / "enhanced" -> say what actually improved and by how much
+   - "ensure" / "ensured" -> "made sure" or be more specific
+   - "align" / "aligned" -> say what was connected to what
 
 2. KILL THESE AI PATTERNS:
    - Em dashes used more than once in the entire resume — rewrite with commas or periods instead
@@ -662,6 +597,8 @@ YOUR EDITING RULES — apply these ruthlessly to the summary and EVERY bullet po
 
 5. THE READ-ALOUD TEST — for each sentence, ask: "Would a real person say this when describing their work to a friend?" If not, rewrite it. Real people say "I ran a team of 35 agents" not "Orchestrated comprehensive management of a 35-person customer service workforce"
 
+6. IMPORTANT: Use plain ASCII characters only. No em dashes (—), en dashes (–), or smart quotes. Use regular hyphens (-) and straight quotes (') and double quotes (").
+
 CRITICAL RULES:
 - DO NOT change any job titles, company names, dates, education, or certifications
 - DO NOT change the meaning or facts of any bullet — only the language
@@ -675,11 +612,7 @@ Respond with ONLY the humanized JSON object (no markdown, no backticks, no comme
   const response = await fetch("/api/claude", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      model: "claude-sonnet-4-20250514",
-      max_tokens: 4096,
-      messages: [{ role: "user", content: humanizePrompt }]
-    })
+    body: JSON.stringify({ model: "claude-sonnet-4-20250514", max_tokens: 4096, messages: [{ role: "user", content: humanizePrompt }] })
   });
   const data = await response.json();
   const text = data.content?.map((c) => c.text || "").join("") || "";
@@ -690,7 +623,7 @@ Respond with ONLY the humanized JSON object (no markdown, no backticks, no comme
 function fallbackGenerate(bestResume, allResumes, jdData, scores, answers) {
   // Parse the best resume's actual content as best we can
   const text = bestResume.text;
-  const lines = text.split("\n").filter((l) => l.trim());
+  const lines = text.split(" ").filter((l) => l.trim());
 
   // Try to extract name from first meaningful line
   const name = lines.find((l) => l.trim().length > 2 && l.trim().length < 60 && !/[@|•\-*]/.test(l)) || "Your Name";
@@ -745,6 +678,7 @@ function generatePDFFromData(resumeData) {
   const doc = new jsPDF({ unit: "pt", format: "letter" });
   const W = doc.internal.pageSize.getWidth(); // 612
   const H = doc.internal.pageSize.getHeight(); // 792
+
   const mL = 54;
   const mR = 54;
   const mTop = 48;
@@ -760,11 +694,13 @@ function generatePDFFromData(resumeData) {
   const lineColor = [180, 185, 195];
 
   const newPageIfNeeded = (needed) => {
-    if (y + needed > H - mBot) { doc.addPage(); y = mTop; }
+    if (y + needed > H - mBot) {
+      doc.addPage();
+      y = mTop;
+    }
   };
 
-  // ─── HELPERS ───
-
+  // ─── HELPERS ────────────────────────────────────────────────────────────────
   const drawLine = () => {
     doc.setDrawColor(...lineColor);
     doc.setLineWidth(0.5);
@@ -775,11 +711,13 @@ function generatePDFFromData(resumeData) {
     doc.setFontSize(9.5);
     doc.setFont("helvetica", "normal");
     doc.setTextColor(...body);
-    const lines = doc.splitTextToSize(String(text || ""), maxWidth || contentW);
+    // Clean text before rendering
+    const cleanedText = cleanTextForPDF(text);
+    const lines = doc.splitTextToSize(String(cleanedText || ""), maxWidth || contentW);
     lines.forEach((line) => {
-      newPageIfNeeded(12);
+      newPageIfNeeded(14);
       doc.text(line, mL, y);
-      y += 11.5;
+      y += 13;
     });
   };
 
@@ -790,8 +728,10 @@ function generatePDFFromData(resumeData) {
     doc.setFontSize(sz);
     doc.setFont("helvetica", "normal");
     doc.setTextColor(...body);
-    const lines = doc.splitTextToSize(String(text || ""), bMaxW);
-    const totalH = lines.length * 11.5 + 2;
+    // Clean text before rendering
+    const cleanedText = cleanTextForPDF(text);
+    const lines = doc.splitTextToSize(String(cleanedText || ""), bMaxW);
+    const totalH = lines.length * 13 + 4;
     newPageIfNeeded(totalH);
     lines.forEach((line, i) => {
       if (i === 0) {
@@ -801,52 +741,54 @@ function generatePDFFromData(resumeData) {
         doc.setFontSize(sz);
       }
       doc.text(line, indent, y);
-      y += 11.5;
+      y += 13;
     });
-    y += 1.5;
+    y += 4;
   };
 
   const sectionHeader = (title) => {
-    newPageIfNeeded(24);
-    y += 8;
+    newPageIfNeeded(30);
+    y += 12;
     doc.setFontSize(11);
     doc.setFont("helvetica", "bold");
     doc.setTextColor(...navy);
     doc.text(title.toUpperCase(), mL, y);
-    y += 5;
+    y += 6;
     drawLine();
-    y += 8;
+    y += 14;
   };
 
-  // ═══════════════════════════════════════════════════
+  // ═══════════════════════════════════════════════════════════════════════════
   // NAME — large, bold, navy, left-aligned
-  // ═══════════════════════════════════════════════════
+  // ═══════════════════════════════════════════════════════════════════════════
   doc.setFontSize(20);
   doc.setFont("helvetica", "bold");
   doc.setTextColor(...navy);
-  doc.text(resumeData.name || "Your Name", mL, y);
+  // Clean name before rendering
+  const cleanedName = cleanTextForPDF(resumeData.name);
+  doc.text(cleanedName || "Your Name", mL, y);
   y += 16;
 
-  // ═══════════════════════════════════════════════════
+  // ═══════════════════════════════════════════════════════════════════════════
   // CONTACT — single or double row, normal weight, no italics
-  // ═══════════════════════════════════════════════════
+  // ═══════════════════════════════════════════════════════════════════════════
   if (resumeData.contact) {
     const parts = resumeData.contact.split(/[|]/).map(p => p.trim()).filter(Boolean);
     doc.setFontSize(8.5);
     doc.setFont("helvetica", "normal");
     doc.setTextColor(...muted);
-
-    const oneLine = parts.join("  |  ");
+    // Clean each contact part
+    const cleanedParts = parts.map(p => cleanTextForPDF(p));
+    const oneLine = cleanedParts.join(" | ");
     const oneLineW = doc.getTextWidth(oneLine);
-
     if (oneLineW <= contentW) {
       doc.text(oneLine, mL, y);
       y += 11;
     } else {
       const mid = Math.ceil(parts.length / 2);
-      doc.text(parts.slice(0, mid).join("  |  "), mL, y);
+      doc.text(cleanedParts.slice(0, mid).join(" | "), mL, y);
       y += 11;
-      doc.text(parts.slice(mid).join("  |  "), mL, y);
+      doc.text(cleanedParts.slice(mid).join(" | "), mL, y);
       y += 11;
     }
   }
@@ -858,39 +800,41 @@ function generatePDFFromData(resumeData) {
   doc.line(mL, y, W - mR, y);
   y += 10;
 
-  // ═══════════════════════════════════════════════════
+  // ═══════════════════════════════════════════════════════════════════════════
   // PROFESSIONAL SUMMARY
-  // ═══════════════════════════════════════════════════
+  // ═══════════════════════════════════════════════════════════════════════════
   if (resumeData.summary) {
     sectionHeader("Professional Summary");
     bodyText(resumeData.summary);
-    y += 2;
+    y += 8;
   }
 
-  // ═══════════════════════════════════════════════════
+  // ═══════════════════════════════════════════════════════════════════════════
   // SKILLS — pipe-separated, compact
-  // ═══════════════════════════════════════════════════
+  // ═══════════════════════════════════════════════════════════════════════════
   if (resumeData.skills?.length) {
     sectionHeader("Core Skills");
     doc.setFontSize(9);
     doc.setFont("helvetica", "normal");
     doc.setTextColor(...body);
-    const skillsText = resumeData.skills.join("  |  ");
+    // Limit to 8 skills max
+    const limitedSkills = resumeData.skills.slice(0, 8);
+    const cleanedSkills = limitedSkills.map(s => cleanTextForPDF(s));
+    const skillsText = cleanedSkills.join(" | ");
     const skillLines = doc.splitTextToSize(skillsText, contentW);
     skillLines.forEach((line) => {
-      newPageIfNeeded(12);
+      newPageIfNeeded(14);
       doc.text(line, mL, y);
-      y += 11.5;
+      y += 13;
     });
-    y += 2;
+    y += 4;
   }
 
-  // ═══════════════════════════════════════════════════
+  // ═══════════════════════════════════════════════════════════════════════════
   // EXPERIENCE
-  // ═══════════════════════════════════════════════════
+  // ═══════════════════════════════════════════════════════════════════════════
   if (resumeData.experience?.length) {
     sectionHeader("Professional Experience");
-
     resumeData.experience.forEach((exp, idx) => {
       newPageIfNeeded(55);
 
@@ -904,19 +848,23 @@ function generatePDFFromData(resumeData) {
         doc.setFontSize(9);
         doc.setFont("helvetica", "normal");
         doc.setTextColor(...muted);
-        doc.text(exp.dates, W - mR, y, { align: "right" });
+        // Clean dates
+        const cleanedDates = cleanTextForPDF(exp.dates);
+        doc.text(cleanedDates, W - mR, y, { align: "right" });
       }
 
       // Title text — constrained to not overlap dates
       doc.setFontSize(10.5);
       doc.setFont("helvetica", "bold");
       doc.setTextColor(...black);
-      const datesW = exp.dates ? doc.getTextWidth(exp.dates) + 16 : 0;
+      // Clean title
+      const cleanedTitle = cleanTextForPDF(exp.title);
+      const datesW = exp.dates ? doc.getTextWidth(cleanTextForPDF(exp.dates)) + 16 : 0;
       const titleMaxW = contentW - datesW;
-      const titleLines = doc.splitTextToSize(exp.title || "", titleMaxW);
+      const titleLines = doc.splitTextToSize(cleanedTitle || "", titleMaxW);
       titleLines.forEach((line) => {
         doc.text(line, mL, y);
-        y += 13;
+        y += 15;
       });
 
       // Company — bold, on its own line
@@ -924,11 +872,13 @@ function generatePDFFromData(resumeData) {
         doc.setFontSize(9.5);
         doc.setFont("helvetica", "bold");
         doc.setTextColor(...muted);
-        doc.text(exp.company, mL, y);
-        y += 12;
+        // Clean company name
+        const cleanedCompany = cleanTextForPDF(exp.company);
+        doc.text(cleanedCompany, mL, y);
+        y += 14;
       }
 
-      y += 2;
+      y += 4;
 
       // Bullets
       if (exp.bullets?.length) {
@@ -948,60 +898,68 @@ function generatePDFFromData(resumeData) {
     });
   }
 
-  // ═══════════════════════════════════════════════════
+  // ═══════════════════════════════════════════════════════════════════════════
   // EDUCATION
-  // ═══════════════════════════════════════════════════
+  // ═══════════════════════════════════════════════════════════════════════════
   if (resumeData.education?.length) {
     sectionHeader("Education");
     resumeData.education.forEach((ed) => {
-      newPageIfNeeded(24);
+      newPageIfNeeded(28);
 
       // Degree — bold
       doc.setFontSize(10);
       doc.setFont("helvetica", "bold");
       doc.setTextColor(...black);
-      doc.text(ed.degree || "", mL, y);
+      // Clean degree
+      const cleanedDegree = cleanTextForPDF(ed.degree);
+      doc.text(cleanedDegree || "", mL, y);
 
       // Year — right-aligned
       if (ed.year) {
         doc.setFontSize(9);
         doc.setFont("helvetica", "normal");
         doc.setTextColor(...muted);
-        doc.text(ed.year, W - mR, y, { align: "right" });
+        // Clean year
+        const cleanedYear = cleanTextForPDF(ed.year);
+        doc.text(cleanedYear, W - mR, y, { align: "right" });
       }
-      y += 12;
+      y += 14;
 
       // School — normal weight below
       if (ed.school) {
         doc.setFontSize(9);
         doc.setFont("helvetica", "normal");
         doc.setTextColor(...body);
-        doc.text(ed.school, mL, y);
-        y += 13;
+        // Clean school
+        const cleanedSchool = cleanTextForPDF(ed.school);
+        doc.text(cleanedSchool, mL, y);
+        y += 15;
       }
     });
-    y += 2;
+    y += 6;
   }
 
-  // ═══════════════════════════════════════════════════
+  // ═══════════════════════════════════════════════════════════════════════════
   // CERTIFICATIONS
-  // ═══════════════════════════════════════════════════
+  // ═══════════════════════════════════════════════════════════════════════════
   if (resumeData.certifications?.length && resumeData.certifications.some((c) => c)) {
     sectionHeader("Certifications");
     resumeData.certifications.filter((c) => c).forEach((cert) => {
-      newPageIfNeeded(14);
+      newPageIfNeeded(16);
       doc.setFontSize(9.5);
       doc.setFont("helvetica", "bold");
       doc.setTextColor(...black);
-      doc.text(cert, mL, y);
-      y += 13;
+      // Clean certification
+      const cleanedCert = cleanTextForPDF(cert);
+      doc.text(cleanedCert, mL, y);
+      y += 15;
     });
   }
 
   doc.save("optimized_resume.pdf");
 }
 
-// ─── Styles ────────────────────────────────────────────────────────────────
+// ─── Styles ─────────────────────────────────────────────────────────────────
 
 const S = {
   app: { fontFamily: "'DM Sans', 'Segoe UI', sans-serif", minHeight: "100vh", background: "linear-gradient(165deg, #0a0e1a 0%, #111827 40%, #0f172a 100%)", color: "#e2e8f0", padding: 0, margin: 0 },
@@ -1015,45 +973,18 @@ const S = {
   cardGlow: (color) => ({ position: "absolute", top: -1, left: -1, right: -1, height: 3, background: `linear-gradient(90deg, transparent, ${color}, transparent)`, borderRadius: "16px 16px 0 0" }),
   cardTitle: { fontSize: 15, fontWeight: 700, color: "#f1f5f9", marginBottom: 16, display: "flex", alignItems: "center", gap: 10 },
   badge: (color) => ({ display: "inline-flex", alignItems: "center", justifyContent: "center", width: 28, height: 28, borderRadius: 8, background: color, fontSize: 14 }),
-  dropzone: (active) => ({
-    border: `2px dashed ${active ? "#818cf8" : "rgba(148,163,184,0.25)"}`,
-    borderRadius: 12, padding: "36px 20px", textAlign: "center", cursor: "pointer",
-    background: active ? "rgba(129,140,248,0.08)" : "rgba(15,23,42,0.4)",
-    transition: "all 0.2s ease"
-  }),
+  dropzone: (active) => ({ border: `2px dashed ${active ? "#818cf8" : "rgba(148,163,184,0.25)"}`, borderRadius: 12, padding: "36px 20px", textAlign: "center", cursor: "pointer", background: active ? "rgba(129,140,248,0.08)" : "rgba(15,23,42,0.4)", transition: "all 0.2s ease" }),
   resumeChip: { display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 14px", background: "rgba(99,102,241,0.1)", border: "1px solid rgba(99,102,241,0.2)", borderRadius: 10, marginBottom: 8, fontSize: 13 },
   textarea: { width: "100%", minHeight: 200, background: "rgba(15,23,42,0.6)", border: "1px solid rgba(148,163,184,0.15)", borderRadius: 10, padding: 16, color: "#e2e8f0", fontSize: 13, fontFamily: "'DM Sans', sans-serif", resize: "vertical", outline: "none", lineHeight: 1.6, boxSizing: "border-box" },
-  btn: (variant) => ({
-    padding: variant === "lg" ? "14px 32px" : "10px 20px",
-    borderRadius: 10, border: "none", cursor: "pointer", fontWeight: 600, fontSize: variant === "lg" ? 15 : 13,
-    fontFamily: "'DM Sans', sans-serif",
-    background: variant === "ghost" ? "transparent" : "linear-gradient(135deg, #6366f1, #818cf8)",
-    color: variant === "ghost" ? "#94a3b8" : "#fff",
-    transition: "all 0.2s", display: "inline-flex", alignItems: "center", gap: 8
-  }),
+  btn: (variant) => ({ padding: variant === "lg" ? "14px 32px" : "10px 20px", borderRadius: 10, border: "none", cursor: "pointer", fontWeight: 600, fontSize: variant === "lg" ? 15 : 13, fontFamily: "'DM Sans', sans-serif", background: variant === "ghost" ? "transparent" : "linear-gradient(135deg, #6366f1, #818cf8)", color: variant === "ghost" ? "#94a3b8" : "#fff", transition: "all 0.2s", display: "inline-flex", alignItems: "center", gap: 8 }),
   btnDanger: { padding: "4px 8px", borderRadius: 6, border: "none", cursor: "pointer", background: "rgba(239,68,68,0.15)", color: "#f87171", fontSize: 12, fontFamily: "'DM Sans', sans-serif" },
-  scoreCircle: (score) => ({
-    width: 72, height: 72, borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center",
-    fontSize: 22, fontWeight: 800, color: "#fff",
-    background: `conic-gradient(${score >= 70 ? "#22c55e" : score >= 45 ? "#eab308" : "#ef4444"} ${score * 3.6}deg, rgba(51,65,85,0.5) 0deg)`,
-    position: "relative"
-  }),
+  scoreCircle: (score) => ({ width: 72, height: 72, borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 22, fontWeight: 800, color: "#fff", background: `conic-gradient(${score >= 70 ? "#22c55e" : score >= 45 ? "#eab308" : "#ef4444"} ${score * 3.6}deg, rgba(51,65,85,0.5) 0deg)`, position: "relative" }),
   scoreInner: { position: "absolute", width: 56, height: 56, borderRadius: "50%", background: "#1e293b", display: "flex", alignItems: "center", justifyContent: "center" },
   input: { width: "100%", padding: "10px 14px", background: "rgba(15,23,42,0.6)", border: "1px solid rgba(148,163,184,0.15)", borderRadius: 8, color: "#e2e8f0", fontSize: 13, fontFamily: "'DM Sans', sans-serif", outline: "none", boxSizing: "border-box" },
   progressBar: () => ({ width: "100%", height: 6, borderRadius: 3, background: "rgba(51,65,85,0.5)", overflow: "hidden", position: "relative" }),
   progressFill: (pct, color) => ({ position: "absolute", top: 0, left: 0, height: "100%", width: `${pct}%`, borderRadius: 3, background: color, transition: "width 0.6s ease" }),
-  tag: (matched) => ({
-    display: "inline-block", padding: "3px 10px", borderRadius: 6, fontSize: 11, fontWeight: 600, margin: "2px 4px 2px 0",
-    background: matched ? "rgba(34,197,94,0.15)" : "rgba(239,68,68,0.1)",
-    color: matched ? "#4ade80" : "#f87171",
-    border: `1px solid ${matched ? "rgba(34,197,94,0.25)" : "rgba(239,68,68,0.15)"}`
-  }),
-  stepIndicator: (active, done) => ({
-    width: 36, height: 36, borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center",
-    fontSize: 14, fontWeight: 700,
-    background: done ? "#22c55e" : active ? "#6366f1" : "rgba(51,65,85,0.6)",
-    color: "#fff", transition: "all 0.3s", flexShrink: 0
-  }),
+  tag: (matched) => ({ display: "inline-block", padding: "3px 10px", borderRadius: 6, fontSize: 11, fontWeight: 600, margin: "2px 4px 2px 0", background: matched ? "rgba(34,197,94,0.15)" : "rgba(239,68,68,0.1)", color: matched ? "#4ade80" : "#f87171", border: `1px solid ${matched ? "rgba(34,197,94,0.25)" : "rgba(239,68,68,0.15)"}` }),
+  stepIndicator: (active, done) => ({ width: 36, height: 36, borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 14, fontWeight: 700, background: done ? "#22c55e" : active ? "#6366f1" : "rgba(51,65,85,0.6)", color: "#fff", transition: "all 0.3s", flexShrink: 0 }),
   stepLine: (done) => ({ flex: 1, height: 2, background: done ? "#22c55e" : "rgba(51,65,85,0.4)", margin: "0 8px", borderRadius: 1 })
 };
 
@@ -1089,7 +1020,7 @@ function StepProgress({ step }) {
   );
 }
 
-// ─── Suggestion Card ────────────────────────────────────────────────────────
+// ─── Suggestion Card ─────────────────────────────────────────────────────────
 
 function SuggestionCard({ suggestion, isSelected, onSelect }) {
   const confidenceColors = { high: "#22c55e", medium: "#eab308", low: "#94a3b8" };
@@ -1098,23 +1029,17 @@ function SuggestionCard({ suggestion, isSelected, onSelect }) {
   const color = confidenceColors[suggestion.confidence] || "#94a3b8";
 
   return (
-    <div
-      onClick={onSelect}
-      style={{
-        padding: "14px 16px", borderRadius: 10,
-        border: `1.5px solid ${isSelected ? "#818cf8" : "rgba(148,163,184,0.12)"}`,
-        background: isSelected ? "rgba(99,102,241,0.1)" : "rgba(15,23,42,0.35)",
-        cursor: "pointer", transition: "all 0.2s ease", position: "relative",
-      }}
-    >
+    <div onClick={onSelect} style={{
+      padding: "14px 16px",
+      borderRadius: 10,
+      border: `1.5px solid ${isSelected ? "#818cf8" : "rgba(148,163,184,0.12)"}`,
+      background: isSelected ? "rgba(99,102,241,0.1)" : "rgba(15,23,42,0.35)",
+      cursor: "pointer",
+      transition: "all 0.2s ease",
+      position: "relative",
+    }} >
       <div style={{ display: "flex", alignItems: "flex-start", gap: 10 }}>
-        <div style={{
-          width: 22, height: 22, borderRadius: "50%", flexShrink: 0, marginTop: 1,
-          border: `2px solid ${isSelected ? "#818cf8" : "rgba(148,163,184,0.3)"}`,
-          background: isSelected ? "#6366f1" : "transparent",
-          display: "flex", alignItems: "center", justifyContent: "center",
-          transition: "all 0.2s"
-        }}>
+        <div style={{ width: 22, height: 22, borderRadius: "50%", flexShrink: 0, marginTop: 1, border: `2px solid ${isSelected ? "#818cf8" : "rgba(148,163,184,0.3)"}`, background: isSelected ? "#6366f1" : "transparent", display: "flex", alignItems: "center", justifyContent: "center", transition: "all 0.2s" }}>
           {isSelected && <span style={{ color: "#fff", fontSize: 12, fontWeight: 700 }}>✓</span>}
         </div>
         <div style={{ flex: 1 }}>
@@ -1122,12 +1047,7 @@ function SuggestionCard({ suggestion, isSelected, onSelect }) {
             {suggestion.text}
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-            <span style={{
-              display: "inline-flex", alignItems: "center", gap: 4,
-              fontSize: 10, fontWeight: 600, color, letterSpacing: "0.3px",
-              padding: "2px 8px", borderRadius: 4,
-              background: `${color}15`, border: `1px solid ${color}30`
-            }}>
+            <span style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 10, fontWeight: 600, color, letterSpacing: "0.3px", padding: "2px 8px", borderRadius: 4, background: `${color}15`, border: `1px solid ${color}30` }}>
               <span style={{ fontSize: 8 }}>{confidenceIcons[suggestion.confidence]}</span>
               {confidenceLabels[suggestion.confidence]}
             </span>
@@ -1165,46 +1085,23 @@ function QuestionBlock({ question, index, suggestions, answer, onAnswerChange, i
 
   // Skeleton shimmer bars
   const SkeletonSuggestion = ({ width1, width2 }) => (
-    <div style={{
-      padding: "14px 16px", borderRadius: 10,
-      border: "1px solid rgba(148,163,184,0.06)", background: "rgba(15,23,42,0.25)"
-    }}>
+    <div style={{ padding: "14px 16px", borderRadius: 10, border: "1px solid rgba(148,163,184,0.06)", background: "rgba(15,23,42,0.25)" }}>
       <div style={{ display: "flex", alignItems: "flex-start", gap: 10 }}>
         <div style={{ width: 22, height: 22, borderRadius: "50%", border: "2px solid rgba(148,163,184,0.1)", flexShrink: 0 }} />
         <div style={{ flex: 1 }}>
-          <div style={{
-            height: 13, width: `${width1}%`, borderRadius: 4, marginBottom: 6,
-            background: "linear-gradient(90deg, rgba(148,163,184,0.08), rgba(148,163,184,0.16), rgba(148,163,184,0.08))",
-            backgroundSize: "200% 100%", animation: "shimmer 1.5s infinite"
-          }} />
-          <div style={{
-            height: 13, width: `${width1 - 15}%`, borderRadius: 4, marginBottom: 8,
-            background: "linear-gradient(90deg, rgba(148,163,184,0.06), rgba(148,163,184,0.12), rgba(148,163,184,0.06))",
-            backgroundSize: "200% 100%", animation: "shimmer 1.7s infinite"
-          }} />
-          <div style={{
-            height: 10, width: `${width2}%`, borderRadius: 4,
-            background: "linear-gradient(90deg, rgba(148,163,184,0.05), rgba(148,163,184,0.1), rgba(148,163,184,0.05))",
-            backgroundSize: "200% 100%", animation: "shimmer 2s infinite"
-          }} />
+          <div style={{ height: 13, width: `${width1}%`, borderRadius: 4, marginBottom: 6, background: "linear-gradient(90deg, rgba(148,163,184,0.08), rgba(148,163,184,0.16), rgba(148,163,184,0.08))", backgroundSize: "200% 100%", animation: "shimmer 1.5s infinite" }} />
+          <div style={{ height: 13, width: `${width1 - 15}%`, borderRadius: 4, marginBottom: 8, background: "linear-gradient(90deg, rgba(148,163,184,0.06), rgba(148,163,184,0.12), rgba(148,163,184,0.06))", backgroundSize: "200% 100%", animation: "shimmer 1.7s infinite" }} />
+          <div style={{ height: 10, width: `${width2}%`, borderRadius: 4, background: "linear-gradient(90deg, rgba(148,163,184,0.05), rgba(148,163,184,0.1), rgba(148,163,184,0.05))", backgroundSize: "200% 100%", animation: "shimmer 2s infinite" }} />
         </div>
       </div>
     </div>
   );
 
   return (
-    <div style={{
-      background: "rgba(15,23,42,0.3)", border: "1px solid rgba(148,163,184,0.08)",
-      borderRadius: 14, padding: 24, marginBottom: 20
-    }}>
+    <div style={{ background: "rgba(15,23,42,0.3)", border: "1px solid rgba(148,163,184,0.08)", borderRadius: 14, padding: 24, marginBottom: 20 }}>
       {/* Question header */}
       <div style={{ display: "flex", alignItems: "flex-start", gap: 12, marginBottom: 16 }}>
-        <div style={{
-          width: 28, height: 28, borderRadius: 8, flexShrink: 0,
-          background: "linear-gradient(135deg, #6366f1, #818cf8)",
-          display: "flex", alignItems: "center", justifyContent: "center",
-          fontSize: 13, fontWeight: 800, color: "#fff"
-        }}>
+        <div style={{ width: 28, height: 28, borderRadius: 8, flexShrink: 0, background: "linear-gradient(135deg, #6366f1, #818cf8)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 13, fontWeight: 800, color: "#fff" }}>
           {index + 1}
         </div>
         <div style={{ fontSize: 14, fontWeight: 600, color: "#f1f5f9", lineHeight: 1.55 }}>
@@ -1214,11 +1111,7 @@ function QuestionBlock({ question, index, suggestions, answer, onAnswerChange, i
 
       {/* Suggestion area */}
       <div style={{ paddingLeft: 40 }}>
-        <div style={{
-          fontSize: 10, fontWeight: 700, color: "#818cf8", letterSpacing: "1.2px",
-          marginBottom: 10, textTransform: "uppercase",
-          display: "flex", alignItems: "center", gap: 6
-        }}>
+        <div style={{ fontSize: 10, fontWeight: 700, color: "#818cf8", letterSpacing: "1.2px", marginBottom: 10, textTransform: "uppercase", display: "flex", alignItems: "center", gap: 6 }}>
           <span style={{ display: "inline-block", width: 14, height: 14, borderRadius: 4, background: "rgba(99,102,241,0.2)", textAlign: "center", lineHeight: "14px", fontSize: 9 }}>
             {isLoading ? "⟳" : "✦"}
           </span>
@@ -1238,12 +1131,7 @@ function QuestionBlock({ question, index, suggestions, answer, onAnswerChange, i
         {!isLoading && suggestions && suggestions.length > 0 && (
           <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 14 }}>
             {suggestions.map((s, i) => (
-              <SuggestionCard
-                key={i}
-                suggestion={s}
-                isSelected={selectedIdx === i && !editing}
-                onSelect={() => handleSelect(i)}
-              />
+              <SuggestionCard key={i} suggestion={s} isSelected={selectedIdx === i && !editing} onSelect={() => handleSelect(i)} />
             ))}
           </div>
         )}
@@ -1252,39 +1140,20 @@ function QuestionBlock({ question, index, suggestions, answer, onAnswerChange, i
         {!isLoading && (
           <>
             {!editing && selectedIdx !== null && (
-              <button onClick={handleCustomEdit} style={{
-                ...S.btn("ghost"), fontSize: 12, padding: "6px 14px",
-                border: "1px dashed rgba(148,163,184,0.25)", borderRadius: 8, marginTop: 4
-              }}>
+              <button onClick={handleCustomEdit} style={{ ...S.btn("ghost"), fontSize: 12, padding: "6px 14px", border: "1px dashed rgba(148,163,184,0.25)", borderRadius: 8, marginTop: 4 }}>
                 ✏️ Edit selected answer or write your own
               </button>
             )}
-
             {!editing && selectedIdx === null && (
-              <button onClick={handleEditClick} style={{
-                ...S.btn("ghost"), fontSize: 12, padding: "6px 14px",
-                border: "1px dashed rgba(148,163,184,0.25)", borderRadius: 8, marginTop: 4
-              }}>
+              <button onClick={handleEditClick} style={{ ...S.btn("ghost"), fontSize: 12, padding: "6px 14px", border: "1px dashed rgba(148,163,184,0.25)", borderRadius: 8, marginTop: 4 }}>
                 ✍️ Write a custom answer instead
               </button>
             )}
-
             {editing && (
               <div style={{ marginTop: 8 }}>
-                <textarea
-                  ref={textareaRef}
-                  style={{
-                    ...S.input, minHeight: 80, resize: "vertical", lineHeight: 1.6,
-                    border: "1px solid rgba(99,102,241,0.4)",
-                    background: "rgba(99,102,241,0.05)"
-                  }}
-                  placeholder={question.placeholder}
-                  value={answer || ""}
-                  onChange={(e) => { setSelectedIdx(null); onAnswerChange(e.target.value); }}
-                />
+                <textarea ref={textareaRef} style={{ ...S.input, minHeight: 80, resize: "vertical", lineHeight: 1.6, border: "1px solid rgba(99,102,241,0.4)", background: "rgba(99,102,241,0.05)" }} placeholder={question.placeholder} value={answer || ""} onChange={(e) => { setSelectedIdx(null); onAnswerChange(e.target.value); }} />
                 <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 6 }}>
-                  <button onClick={() => { setEditing(false); if (!answer) setSelectedIdx(null); }}
-                    style={{ ...S.btn("ghost"), fontSize: 11, padding: "4px 10px" }}>
+                  <button onClick={() => { setEditing(false); if (!answer) setSelectedIdx(null); }} style={{ ...S.btn("ghost"), fontSize: 11, padding: "4px 10px" }}>
                     Done editing
                   </button>
                 </div>
@@ -1293,12 +1162,7 @@ function QuestionBlock({ question, index, suggestions, answer, onAnswerChange, i
 
             {/* Answer confirmation */}
             {answer && !editing && (
-              <div style={{
-                marginTop: 10, padding: "10px 14px",
-                background: "rgba(34,197,94,0.06)", border: "1px solid rgba(34,197,94,0.15)",
-                borderRadius: 8, fontSize: 12, color: "#4ade80",
-                display: "flex", alignItems: "center", gap: 8
-              }}>
+              <div style={{ marginTop: 10, padding: "10px 14px", background: "rgba(34,197,94,0.06)", border: "1px solid rgba(34,197,94,0.15)", borderRadius: 8, fontSize: 12, color: "#4ade80", display: "flex", alignItems: "center", gap: 8 }}>
                 <span>✓</span>
                 <span style={{ color: "#94a3b8" }}>Answer saved ({answer.length} chars)</span>
               </div>
@@ -1310,7 +1174,7 @@ function QuestionBlock({ question, index, suggestions, answer, onAnswerChange, i
   );
 }
 
-// ─── Main App ──────────────────────────────────────────────────────────────
+// ─── Main App ────────────────────────────────────────────────────────────────
 
 export default function ResumeOptimizer() {
   const [resumes, setResumes] = useState([]);
@@ -1339,75 +1203,119 @@ export default function ResumeOptimizer() {
       const stored = localStorage.getItem(STORAGE_KEY);
       if (stored) {
         const data = JSON.parse(stored);
-        if (data.resumes?.length) { setResumes(data.resumes); setStep(1); }
+        if (data.resumes?.length) {
+          setResumes(data.resumes);
+          setStep(1);
+        }
       }
     } catch (e) { /* no stored data */ }
   }, []);
 
   const saveResumes = useCallback((r) => {
-    try { localStorage.setItem(STORAGE_KEY, JSON.stringify({ resumes: r, updatedAt: new Date().toISOString() })); } catch (e) { console.error("Storage save failed:", e); }
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify({ resumes: r, updatedAt: new Date().toISOString() }));
+    } catch (e) {
+      console.error("Storage save failed:", e);
+    }
   }, []);
 
   const handleFiles = async (files) => {
-    if (!pdfReady) { alert("PDF libraries still loading..."); return; }
+    if (!pdfReady) {
+      alert("PDF libraries still loading...");
+      return;
+    }
     const pdfFiles = Array.from(files).filter((f) => f.type === "application/pdf").slice(0, MAX_RESUMES - resumes.length);
     if (!pdfFiles.length) return;
-    setLoading(true); setStatus("Extracting text from PDFs...");
+
+    setLoading(true);
+    setStatus("Extracting text from PDFs...");
     const newResumes = [...resumes];
     for (const file of pdfFiles) {
       try {
         const text = await extractTextFromPDF(file);
         newResumes.push({ name: file.name, text, uploadedAt: new Date().toISOString(), id: Date.now() + Math.random() });
-      } catch (e) { console.error("Failed:", file.name, e); }
+      } catch (e) {
+        console.error("Failed:", file.name, e);
+      }
     }
-    setResumes(newResumes); await saveResumes(newResumes);
+    setResumes(newResumes);
+    await saveResumes(newResumes);
     if (newResumes.length > 0) setStep(1);
-    setLoading(false); setStatus("");
+    setLoading(false);
+    setStatus("");
   };
 
   const removeResume = async (id) => {
     const updated = resumes.filter((r) => r.id !== id);
-    setResumes(updated); await saveResumes(updated);
+    setResumes(updated);
+    await saveResumes(updated);
     if (updated.length === 0) setStep(0);
   };
 
   const analyzeJD = () => {
     if (!jdText.trim()) return;
-    const data = parseJD(jdText); setJdData(data);
+    const data = parseJD(jdText);
+    setJdData(data);
     const scored = resumes.map((r) => ({ ...r, score: scoreResume(r.text, data) }));
     scored.sort((a, b) => b.score.overall - a.score.overall);
-    setScores(scored); setStep(2);
+    setScores(scored);
+    setStep(2);
   };
 
   const goToQuestions = async () => {
     if (!scores.length || !jdData) return;
     const qs = generateQuestions(jdData, scores[0].score);
-    setQuestions(qs); setSuggestions({}); setAnswers({}); setStep(3);
+    setQuestions(qs);
+    setSuggestions({});
+    setAnswers({});
+    setStep(3);
     setSuggestionsLoading(true);
+
     try {
       const aiResult = await generateSuggestionsForQuestions(qs, resumes, jdData, scores[0].score);
       if (aiResult?.questions) {
-        const m = {}; aiResult.questions.forEach((q) => { m[q.id] = q.suggestions; }); setSuggestions(m);
-      } else { throw new Error("No AI result"); }
+        const m = {};
+        aiResult.questions.forEach((q) => { m[q.id] = q.suggestions; });
+        setSuggestions(m);
+      } else {
+        throw new Error("No AI result");
+      }
     } catch (e) {
       const fb = generateFallbackSuggestions(qs, resumes, jdData, scores[0].score);
-      const m = {}; fb.questions.forEach((q) => { m[q.id] = q.suggestions; }); setSuggestions(m);
+      const m = {};
+      fb.questions.forEach((q) => { m[q.id] = q.suggestions; });
+      setSuggestions(m);
     }
     setSuggestionsLoading(false);
   };
 
   const handleGenerate = async () => {
-    setLoading(true); setStep(4);
-    try { const result = await generateOptimizedResume(scores[0], resumes, jdData, scores[0].score, answers, setStatus); setOptimizedResume(result); }
-    catch (e) { console.error(e); setStatus("Generation failed."); }
-    setLoading(false); setStatus("");
+    setLoading(true);
+    setStep(4);
+    try {
+      const result = await generateOptimizedResume(scores[0], resumes, jdData, scores[0].score, answers, setStatus);
+      setOptimizedResume(result);
+    } catch (e) {
+      console.error(e);
+      setStatus("Generation failed.");
+    }
+    setLoading(false);
+    setStatus("");
   };
 
-  const downloadPDF = () => { if (optimizedResume) generatePDFFromData(optimizedResume); };
+  const downloadPDF = () => {
+    if (optimizedResume) generatePDFFromData(optimizedResume);
+  };
 
   const resetFlow = () => {
-    setJdText(""); setJdData(null); setScores([]); setQuestions([]); setAnswers({});
-    setSuggestions({}); setOptimizedResume(null); setStep(resumes.length > 0 ? 1 : 0);
+    setJdText("");
+    setJdData(null);
+    setScores([]);
+    setQuestions([]);
+    setAnswers({});
+    setSuggestions({});
+    setOptimizedResume(null);
+    setStep(resumes.length > 0 ? 1 : 0);
   };
 
   const answeredCount = questions.filter((q) => answers[q.id]?.trim()).length;
@@ -1448,13 +1356,7 @@ export default function ResumeOptimizer() {
                 </div>
               ))}
               {resumes.length < MAX_RESUMES && (
-                <div
-                  style={S.dropzone(dragOver)}
-                  onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
-                  onDragLeave={() => setDragOver(false)}
-                  onDrop={(e) => { e.preventDefault(); setDragOver(false); handleFiles(e.dataTransfer.files); }}
-                  onClick={() => fileRef.current?.click()}
-                >
+                <div style={S.dropzone(dragOver)} onDragOver={(e) => { e.preventDefault(); setDragOver(true); }} onDragLeave={() => setDragOver(false)} onDrop={(e) => { e.preventDefault(); setDragOver(false); handleFiles(e.dataTransfer.files); }} onClick={() => fileRef.current?.click()}>
                   <input ref={fileRef} type="file" accept=".pdf" multiple hidden onChange={(e) => handleFiles(e.target.files)} />
                   <div style={{ fontSize: 28, marginBottom: 8 }}>⬆</div>
                   <div style={{ color: "#94a3b8", fontSize: 13 }}>{loading ? status : "Drop PDFs here or click to upload"}</div>
@@ -1463,13 +1365,14 @@ export default function ResumeOptimizer() {
               )}
               {resumes.length >= MAX_RESUMES && <div style={{ textAlign: "center", padding: 16, color: "#22c55e", fontSize: 13 }}>✓ Maximum resumes uploaded</div>}
             </div>
+
             <div style={S.card}>
               <div style={S.cardGlow("#22c55e")} />
               <div style={S.cardTitle}>
                 <span style={S.badge("rgba(34,197,94,0.2)")}>📋</span>
                 Job Description
               </div>
-              <textarea style={S.textarea} placeholder={"Paste the full job description here...\n\nInclude the role title, requirements, qualifications, and preferred skills."} value={jdText} onChange={(e) => setJdText(e.target.value)} />
+              <textarea style={S.textarea} placeholder={"Paste the full job description here... Include the role title, requirements, qualifications, and preferred skills."} value={jdText} onChange={(e) => setJdText(e.target.value)} />
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 14 }}>
                 <span style={{ fontSize: 11, color: "#64748b" }}>{jdText.split(/\s+/).filter(Boolean).length} words</span>
                 <button style={{ ...S.btn("lg"), opacity: resumes.length > 0 && jdText.trim() ? 1 : 0.4 }} onClick={analyzeJD} disabled={resumes.length === 0 || !jdText.trim()}>Analyze &amp; Score →</button>
@@ -1526,12 +1429,7 @@ export default function ResumeOptimizer() {
           <div style={{ ...S.card, marginBottom: 24 }}>
             <div style={S.cardGlow("#a78bfa")} />
             <div style={S.cardTitle}><span style={S.badge("rgba(167,139,250,0.2)")}>🧠</span> Deep-Dive Questionnaire</div>
-
-            <div style={{
-              display: "flex", justifyContent: "space-between", alignItems: "center",
-              padding: "14px 18px", background: "rgba(99,102,241,0.06)",
-              borderRadius: 10, marginBottom: 24, border: "1px solid rgba(99,102,241,0.12)"
-            }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "14px 18px", background: "rgba(99,102,241,0.06)", borderRadius: 10, marginBottom: 24, border: "1px solid rgba(99,102,241,0.12)" }}>
               <div>
                 <div style={{ fontSize: 13, color: "#e2e8f0", fontWeight: 600 }}>
                   {suggestionsLoading ? "🔍 Analyzing your resumes for personalized suggestions..." : "✨ AI suggestions ready — select, edit, or write your own"}
@@ -1548,15 +1446,7 @@ export default function ResumeOptimizer() {
             </div>
 
             {questions.map((q, i) => (
-              <QuestionBlock
-                key={q.id}
-                question={q}
-                index={i}
-                suggestions={suggestions[q.id] || []}
-                answer={answers[q.id] || ""}
-                onAnswerChange={(val) => setAnswers((prev) => ({ ...prev, [q.id]: val }))}
-                isLoading={suggestionsLoading}
-              />
+              <QuestionBlock key={q.id} question={q} index={i} suggestions={suggestions[q.id] || []} answer={answers[q.id] || ""} onAnswerChange={(val) => setAnswers((prev) => ({ ...prev, [q.id]: val }))} isLoading={suggestionsLoading} />
             ))}
 
             <div style={{ display: "flex", justifyContent: "space-between", marginTop: 24 }}>
@@ -1574,56 +1464,64 @@ export default function ResumeOptimizer() {
           <div style={{ ...S.card, marginBottom: 24 }}>
             <div style={S.cardGlow("#22c55e")} />
             <div style={S.cardTitle}><span style={S.badge("rgba(34,197,94,0.2)")}>✨</span> {loading ? "Generating..." : "Optimized Resume Ready"}</div>
+
             {loading && (
               <div style={{ textAlign: "center", padding: 60 }}>
                 <div style={{ fontSize: 40, marginBottom: 16, animation: "spin 1.5s linear infinite" }}>⚙️</div>
                 <div style={{ color: "#94a3b8", fontSize: 13 }}>{status || "Processing..."}</div>
               </div>
             )}
+
             {!loading && optimizedResume && (
               <div>
                 <div style={{ background: "rgba(255,255,255,0.03)", borderRadius: 12, padding: 28, border: "1px solid rgba(148,163,184,0.08)", marginBottom: 20 }}>
-                  <div style={{ fontSize: 22, fontWeight: 800, color: "#f1f5f9", textAlign: "center" }}>{optimizedResume.name}</div>
-                  <div style={{ fontSize: 11, color: "#94a3b8", textAlign: "center", marginBottom: 20 }}>{optimizedResume.contact}</div>
+                  <div style={{ fontSize: 22, fontWeight: 800, color: "#f1f5f9", textAlign: "center" }}>{cleanTextForPDF(optimizedResume.name)}</div>
+                  <div style={{ fontSize: 11, color: "#94a3b8", textAlign: "center", marginBottom: 20 }}>{cleanTextForPDF(optimizedResume.contact)}</div>
+
                   {optimizedResume.summary && (
                     <div style={{ marginBottom: 18 }}>
                       <div style={{ fontSize: 11, fontWeight: 700, color: "#818cf8", letterSpacing: "1px", marginBottom: 6 }}>PROFESSIONAL SUMMARY</div>
-                      <div style={{ fontSize: 13, color: "#cbd5e1", lineHeight: 1.7 }}>{optimizedResume.summary}</div>
+                      <div style={{ fontSize: 13, color: "#cbd5e1", lineHeight: 1.7 }}>{cleanTextForPDF(optimizedResume.summary)}</div>
                     </div>
                   )}
+
                   {optimizedResume.skills?.length > 0 && (
                     <div style={{ marginBottom: 18 }}>
                       <div style={{ fontSize: 11, fontWeight: 700, color: "#818cf8", letterSpacing: "1px", marginBottom: 6 }}>SKILLS</div>
                       <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
-                        {optimizedResume.skills.map((s, i) => <span key={i} style={{ padding: "3px 10px", background: "rgba(99,102,241,0.12)", borderRadius: 6, fontSize: 11, color: "#a5b4fc" }}>{s}</span>)}
+                        {optimizedResume.skills.map((s, i) => <span key={i} style={{ padding: "3px 10px", background: "rgba(99,102,241,0.12)", borderRadius: 6, fontSize: 11, color: "#a5b4fc" }}>{cleanTextForPDF(s)}</span>)}
                       </div>
                     </div>
                   )}
+
                   {optimizedResume.experience?.map((exp, i) => (
                     <div key={i} style={{ marginBottom: 16 }}>
                       {i === 0 && <div style={{ fontSize: 11, fontWeight: 700, color: "#818cf8", letterSpacing: "1px", marginBottom: 6 }}>EXPERIENCE</div>}
-                      <div style={{ fontWeight: 700, fontSize: 14, color: "#f1f5f9" }}>{exp.title}{exp.company ? ` — ${exp.company}` : ""}</div>
-                      {exp.dates && <div style={{ fontSize: 11, color: "#64748b", marginBottom: 6 }}>{exp.dates}</div>}
+                      <div style={{ fontWeight: 700, fontSize: 14, color: "#f1f5f9" }}>{cleanTextForPDF(exp.title)}{exp.company ? ` — ${cleanTextForPDF(exp.company)}` : ""}</div>
+                      {exp.dates && <div style={{ fontSize: 11, color: "#64748b", marginBottom: 6 }}>{cleanTextForPDF(exp.dates)}</div>}
                       {exp.bullets?.map((b, j) => (
                         <div key={j} style={{ fontSize: 12.5, color: "#cbd5e1", paddingLeft: 12, position: "relative", lineHeight: 1.6, marginBottom: 4 }}>
-                          <span style={{ position: "absolute", left: 0, color: "#6366f1" }}>•</span>{b}
+                          <span style={{ position: "absolute", left: 0, color: "#6366f1" }}>•</span>{cleanTextForPDF(b)}
                         </div>
                       ))}
                     </div>
                   ))}
+
                   {optimizedResume.education?.map((ed, i) => (
                     <div key={i} style={{ marginBottom: i === 0 ? 8 : 4 }}>
                       {i === 0 && <div style={{ fontSize: 11, fontWeight: 700, color: "#818cf8", letterSpacing: "1px", marginBottom: 6 }}>EDUCATION</div>}
-                      <div style={{ fontSize: 13, color: "#cbd5e1" }}>{ed.degree} — {ed.school}{ed.year ? ` (${ed.year})` : ""}</div>
+                      <div style={{ fontSize: 13, color: "#cbd5e1" }}>{cleanTextForPDF(ed.degree)} — {cleanTextForPDF(ed.school)}{ed.year ? ` (${cleanTextForPDF(ed.year)})` : ""}</div>
                     </div>
                   ))}
+
                   {optimizedResume.certifications?.filter((c) => c).length > 0 && (
                     <div style={{ marginTop: 12 }}>
                       <div style={{ fontSize: 11, fontWeight: 700, color: "#818cf8", letterSpacing: "1px", marginBottom: 6 }}>CERTIFICATIONS</div>
-                      {optimizedResume.certifications.filter((c) => c).map((c, i) => <div key={i} style={{ fontSize: 13, color: "#cbd5e1" }}>• {c}</div>)}
+                      {optimizedResume.certifications.filter((c) => c).map((c, i) => <div key={i} style={{ fontSize: 13, color: "#cbd5e1" }}>• {cleanTextForPDF(c)}</div>)}
                     </div>
                   )}
                 </div>
+
                 <div style={{ display: "flex", justifyContent: "space-between" }}>
                   <button style={S.btn("ghost")} onClick={resetFlow}>← New Job Description</button>
                   <button style={{ ...S.btn("lg"), background: "linear-gradient(135deg, #22c55e, #16a34a)" }} onClick={downloadPDF}>⬇ Download as PDF</button>
