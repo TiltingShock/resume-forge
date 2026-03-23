@@ -111,7 +111,33 @@ function extractKeywords(text) {
     // "this role" type bigrams
     "this role", "this is", "that means", "you will", "you are", "we are",
     "not for", "if you", "what you", "your job", "our goal", "we receive",
-    "sounds like", "looks like", "signing up", "will be", "should feel"
+    "sounds like", "looks like", "signing up", "will be", "should feel",
+    // JD competency/behavioral verbs that aren't real skills
+    "demonstrates", "demonstrate", "demonstrating", "understands", "understand",
+    "recognizes", "recognize", "approaches", "approach", "contributes", "contribute",
+    "applies", "apply", "aligns", "align", "responds", "respond", "reflects",
+    "supports", "brings", "bring", "fosters", "foster", "advances", "advance",
+    "empowers", "empower", "encourages", "encourage", "anticipates", "anticipate",
+    "communicates", "communicate", "models", "model", "invites", "invite",
+    "honors", "honor", "engages", "engage", "adapts", "adapt", "seeks", "seek",
+    "maintains", "maintain", "upholds", "uphold", "practices", "practice",
+    "regulates", "regulate", "considers", "consider", "proposes", "propose",
+    "evaluates", "evaluate", "plans", "plan",
+    // Abstract JD nouns that aren't skills
+    "mindset", "curiosity", "humility", "resilience", "openness", "flexibility",
+    "empathy", "trust", "fairness", "transparency", "autonomy", "initiative",
+    "accountability", "honesty", "consistency", "professionalism", "integrity",
+    "awareness", "foresight", "agility", "inclusion", "diversity", "equity",
+    "justice", "safety", "dignity", "respect", "commitment", "responsibility",
+    "collaboration", "engagement", "influence", "purpose", "clarity",
+    "capacity", "capability", "competency", "competencies", "attribute", "attributes",
+    "framework", "frameworks", "principle", "principles", "barrier", "barriers",
+    "legacy", "legacies", "protocol", "protocols", "dynamic", "dynamics",
+    "implication", "implications", "transition", "transitions",
+    // Misc JD filler
+    "ongoing", "continuous", "broader", "shared", "meaningful", "practical",
+    "appropriate", "effective", "current", "various", "key", "important",
+    "ready", "grounded", "paid", "volunteer", "asset", "previous"
   ]);
 
   return Object.entries(freq)
@@ -149,10 +175,31 @@ function parseJD(text) {
     "problems", "problem", "outcome", "outcomes", "result", "results",
     "ticket", "tickets", "volume", "pressure", "advantage", "excuses",
     "direction", "keyboard", "emails", "comments", "questions", "issues",
-    "hospitality", "support", "ownership", "accountability"
+    "hospitality", "support", "ownership", "accountability",
+    // Competency/behavioral terms
+    "demonstrates", "understands", "recognizes", "approaches", "contributes",
+    "applies", "aligns", "responds", "reflects", "fosters", "advances",
+    "empowers", "encourages", "anticipates", "communicates", "models",
+    "invites", "honors", "engages", "adapts", "seeks", "maintains",
+    "upholds", "practices", "regulates", "considers", "proposes", "evaluates",
+    // Abstract nouns from competency frameworks
+    "mindset", "curiosity", "humility", "resilience", "openness", "flexibility",
+    "empathy", "trust", "fairness", "transparency", "autonomy", "initiative",
+    "honesty", "consistency", "professionalism", "integrity", "awareness",
+    "foresight", "agility", "inclusion", "diversity", "equity", "justice",
+    "safety", "dignity", "respect", "commitment", "responsibility",
+    "collaboration", "engagement", "influence", "purpose", "clarity",
+    "capacity", "capability", "competency", "competencies",
+    // Common JD section words
+    "requirements", "qualifications", "duties", "assigned", "other",
+    "reporting", "minimum", "asset", "attribute", "attributes",
+    // Verbs that look like skills but aren't
+    "granting", "grant", "grants"
   ]);
+  // Additional check: filter out words that are just common English verbs/adjectives
+  const verbPatterns = /^(demonstrates?|understands?|recognizes?|approaches?|supports?|ensures?|builds?|creates?|works?|manages?|provides?|maintains?|responds?|contributes?|applies?|fosters?|advances?|communicates?|plans?|seeks?)$/;
   const skills = keywords.filter((k) =>
-    /[a-z]{2,}/.test(k) && !genericNouns.has(k) && k.length > 3
+    /[a-z]{2,}/.test(k) && !genericNouns.has(k) && !verbPatterns.test(k) && k.length > 3
   );
   return { keywords, skills, requirements, experience, raw: text };
 }
@@ -184,18 +231,25 @@ function scoreResume(resumeText, jdData) {
 function generateQuestions(jdData, bestScore) {
   const questions = [];
 
-  // Filter missing skills to only include things that look like real skills (not generic nouns)
+  // Aggressively filter missing skills — only keep things that are clearly real skills,
+  // tools, technologies, methodologies, or domain-specific terms
+  const junkPatterns = /^(this|that|they|your|their|every|someone|anyone|customer|people|grant|granting|grants|demonstrates?|understands?|recognizes?|approaches?|supports?|ensures?|builds?|creates?|works?|manages?|provides?|maintains?|responds?|contributes?|applies?|communicates?|seeks?|fosters?|advances?|plans?|models?|engages?|adapts?|reflects?|invites?|honors?|regulates?|considers?|proposes?|evaluates?|upholds?|practices?|encourages?|anticipates?|empowers?)$/i;
+
   const realMissing = bestScore.missingSkills.filter((s) => {
-    const lower = s.toLowerCase();
-    // Must be at least 4 chars and look like a real skill, not a generic word
-    return lower.length >= 4 && !/^(this|that|they|your|their|every|someone|anyone|customer|people)/.test(lower);
+    const lower = s.toLowerCase().trim();
+    if (lower.length < 4) return false;
+    if (junkPatterns.test(lower)) return false;
+    // Also filter out single common English words
+    const commonWords = new Set(["also", "well", "must", "just", "very", "will", "been", "each", "make", "many", "much", "good", "best", "keep", "help", "able", "need", "back", "take", "give", "find", "come", "know", "look", "want", "feel", "tell", "show", "turn", "does", "goes", "said", "left", "right", "care", "open", "close", "full", "clear", "strong", "ready", "early", "quick", "learn", "share", "speak", "trust", "value", "power", "space", "place", "stage"]);
+    if (commonWords.has(lower)) return false;
+    return true;
   }).slice(0, 3);
 
-  if (realMissing.length > 0) {
+  if (realMissing.length >= 2) {
     questions.push({
       id: "missing_skills",
       text: `The JD highlights: ${realMissing.join(", ")}. Describe your relevant experience with these areas.`,
-      placeholder: "e.g., I built and managed a customer operations team handling 5,000+ daily inquiries..."
+      placeholder: "e.g., I have 3 years coordinating program administration using SmartSimple and Salesforce..."
     });
   }
 
@@ -203,24 +257,39 @@ function generateQuestions(jdData, bestScore) {
     questions.push({
       id: "years_exp",
       text: `This role asks for ${jdData.experience}+ years of experience. Briefly describe your most relevant experience and tenure.`,
-      placeholder: "e.g., 5 years leading customer operations at a high-growth e-commerce brand..."
+      placeholder: "e.g., 5 years in program administration across nonprofit and government sectors..."
     });
   }
 
-  // Always ask about achievements — this is universally useful
+  // Always ask about achievements
   questions.push({
     id: "achievements",
     text: "What's your most quantifiable achievement relevant to this role?",
-    placeholder: "e.g., Reduced average response time from 24hrs to 90min while scaling team from 3 to 15..."
+    placeholder: "e.g., Processed 200+ grant applications per cycle with 99.5% data accuracy..."
   });
 
-  // Ask about the core JD focus if we can detect it
+  // Detect JD focus areas and ask targeted questions
   const jdLower = jdData.raw.toLowerCase();
+  const isGrantFocused = /grant|granting|grantee|grantmaker|philanthrop|foundation/i.test(jdData.raw);
+  const isNonprofitFocused = /not-for-profit|nonprofit|non-profit|social purpose|community|equity|reconciliation/i.test(jdData.raw);
   const isCustomerFocused = /customer (experience|support|service|success)|cx |ticket|response time/i.test(jdData.raw);
-  const isOpersFocused = /operations|operational|systems|scale|scaling|process/i.test(jdData.raw);
-  const isLeadershipFocused = /manage|leader|team|hire|build a team|head of/i.test(jdData.raw);
+  const isOpersFocused = /operations|operational|systems|scale|scaling|process|administration|coordinate|workflow/i.test(jdData.raw);
+  const isLeadershipFocused = /manage team|leader|hire|build a team|head of|direct report/i.test(jdData.raw);
+  const isDataFocused = /data integrity|data management|database|CRM|grants management system|smartsimple|salesforce/i.test(jdData.raw);
 
-  if (isCustomerFocused) {
+  if (isGrantFocused) {
+    questions.push({
+      id: "domain_focus",
+      text: "Describe any experience with grants, funding programs, or philanthropy — administration, review, compliance, or grantee relationships.",
+      placeholder: "e.g., Coordinated intake for 150+ grant applications annually, managing review committees and compliance tracking..."
+    });
+  } else if (isNonprofitFocused && !isGrantFocused) {
+    questions.push({
+      id: "domain_focus",
+      text: "Describe your experience working in nonprofit, community, or social purpose organizations. What was your role and impact?",
+      placeholder: "e.g., 4 years at a community foundation managing program delivery and stakeholder engagement..."
+    });
+  } else if (isCustomerFocused) {
     questions.push({
       id: "domain_focus",
       text: "Describe your experience managing customer-facing operations at scale — volumes handled, tools used, metrics improved.",
@@ -229,8 +298,16 @@ function generateQuestions(jdData, bestScore) {
   } else if (isOpersFocused) {
     questions.push({
       id: "domain_focus",
-      text: "Describe a system or process you built that significantly improved operational efficiency.",
-      placeholder: "e.g., Designed an automated ticket routing system that reduced resolution time by 40%..."
+      text: "Describe a system or process you built that significantly improved operational efficiency or accuracy.",
+      placeholder: "e.g., Redesigned the application intake workflow, cutting processing time by 40% and eliminating data entry errors..."
+    });
+  }
+
+  if (isDataFocused && !questions.find(q => q.id === "data_focus")) {
+    questions.push({
+      id: "data_focus",
+      text: "What systems or databases have you managed? Describe your experience maintaining data integrity and accuracy.",
+      placeholder: "e.g., Managed records in SmartSimple/Salesforce, ran weekly audits, maintained 99%+ accuracy across 3,000 records..."
     });
   }
 
@@ -238,7 +315,7 @@ function generateQuestions(jdData, bestScore) {
     questions.push({
       id: "domain_focus",
       text: "Describe your experience building or managing teams. How large, in what domain, and what results?",
-      placeholder: "e.g., Built a 12-person support team from scratch, reduced churn by 18% in first quarter..."
+      placeholder: "e.g., Built a 12-person support team from scratch, reduced processing backlog by 60%..."
     });
   }
 
@@ -246,7 +323,7 @@ function generateQuestions(jdData, bestScore) {
   questions.push({
     id: "unique_value",
     text: "What unique value do you bring that other candidates might not?",
-    placeholder: "e.g., I combine deep technical background with customer operations experience..."
+    placeholder: "e.g., I combine nonprofit program experience with strong technical skills in grants management systems..."
   });
 
   return questions.slice(0, 5);
