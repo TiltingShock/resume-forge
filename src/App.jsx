@@ -446,7 +446,7 @@ Respond with ONLY a JSON object (no markdown, no backticks, no commentary) in th
 }`;
 
   try {
-    setStatus("Pass 1/2: ATS keyword optimization...");
+    setStatus("Pass 1/3: ATS keyword optimization...");
     const response = await fetch("/api/claude", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -462,13 +462,22 @@ Respond with ONLY a JSON object (no markdown, no backticks, no commentary) in th
     const atsResult = JSON.parse(cleaned);
 
     // ── PASS 2: Contextual narrative refinement ──
-    setStatus("Pass 2/2: Contextual fit & narrative refinement...");
+    setStatus("Pass 2/3: Contextual fit & narrative refinement...");
+    let pass2Result = atsResult;
     try {
-      const refined = await contextualRefinement(atsResult, jdData);
-      return refined;
+      pass2Result = await contextualRefinement(atsResult, jdData);
     } catch (err2) {
-      console.warn("Contextual pass failed, using ATS-only result:", err2);
-      return atsResult;
+      console.warn("Contextual pass failed, continuing with ATS result:", err2);
+    }
+
+    // ── PASS 3: De-AI humanization ──
+    setStatus("Pass 3/3: Humanizing language & removing AI patterns...");
+    try {
+      const humanized = await humanizePass(pass2Result);
+      return humanized;
+    } catch (err3) {
+      console.warn("Humanize pass failed, using pass 2 result:", err3);
+      return pass2Result;
     }
   } catch (err) {
     console.error("AI generation failed, using fallback:", err);
@@ -520,6 +529,79 @@ Respond with ONLY the refined JSON object (no markdown, no backticks, no comment
       model: "claude-sonnet-4-20250514",
       max_tokens: 4096,
       messages: [{ role: "user", content: refinementPrompt }]
+    })
+  });
+  const data = await response.json();
+  const text = data.content?.map((c) => c.text || "").join("") || "";
+  const cleaned = text.replace(/```json|```/g, "").trim();
+  return JSON.parse(cleaned);
+}
+
+// ─── Pass 3: De-AI Humanization ─────────────────────────────────────────────
+
+async function humanizePass(resume) {
+  const humanizePrompt = `You are an editor whose only job is to make AI-generated resume text sound like a real human wrote it. You have a sharp eye for the patterns that make text feel robotic, corporate, or obviously AI-generated.
+
+THE RESUME TO HUMANIZE:
+${JSON.stringify(resume, null, 2)}
+
+YOUR EDITING RULES — apply these ruthlessly to the summary and EVERY bullet point:
+
+1. KILL THESE AI-FAVORITE WORDS — replace them every time:
+   - "utilize" / "utilized" → "used" or be more specific
+   - "leverage" / "leveraged" → "used" or the actual verb (built, ran, applied)
+   - "spearheaded" → "led" or "started" or "ran"
+   - "orchestrated" → "coordinated" or "ran" or "organized"
+   - "facilitated" → "ran" or "helped" or "set up"
+   - "endeavor" → cut it
+   - "streamlined" → say what actually changed ("cut processing time" not "streamlined operations")
+   - "synergy" / "synergies" → cut it
+   - "innovative" / "innovated" → say what was actually new
+   - "cutting-edge" → say the actual technology
+   - "robust" → "solid" or "reliable" or just cut it
+   - "comprehensive" → usually unnecessary, cut it or say "full" / "complete"
+   - "strategic" → often filler, cut it unless strategy was literally the job
+   - "cross-functional" → "across teams" or name the actual teams
+   - "stakeholders" → name them (execs, clients, partners, engineers)
+   - "drive" / "drove" (as in "drove results") → say the specific action
+   - "foster" / "fostered" → "built" or "encouraged" or "created"
+   - "enhance" / "enhanced" → say what actually improved and by how much
+   - "ensure" / "ensured" → "made sure" or be more specific
+   - "align" / "aligned" → say what was connected to what
+
+2. KILL THESE AI PATTERNS:
+   - Em dashes used more than once in the entire resume — rewrite with commas or periods instead
+   - Starting 3+ bullets with the same word (especially "Led," "Managed," "Developed") — vary the openings
+   - Stacking abstract nouns ("operational excellence," "strategic alignment," "performance optimization") — replace with concrete actions and numbers
+   - Filler phrases: "in order to," "with the goal of," "in today's fast-paced," "proven track record of" — cut them
+   - Redundant qualifiers: "successfully delivered" (just "delivered"), "effectively managed" (just "managed"), "proactively identified" (just "found" or "spotted")
+
+3. SENTENCE VARIETY:
+   - Mix short punchy bullets (8-12 words) with longer detailed ones (15-25 words)
+   - Not every bullet needs to follow the "[Action verb] [thing] [result]" template — some can lead with the result or the context
+   - Vary sentence openings — use numbers, results, team names, tools, or context to start some bullets instead of always an action verb
+
+4. ACTIVE VOICE ONLY — if any bullet uses passive voice ("was responsible for," "were implemented," "has been recognized"), rewrite in active voice
+
+5. THE READ-ALOUD TEST — for each sentence, ask: "Would a real person say this when describing their work to a friend?" If not, rewrite it. Real people say "I ran a team of 35 agents" not "Orchestrated comprehensive management of a 35-person customer service workforce"
+
+CRITICAL RULES:
+- DO NOT change any job titles, company names, dates, education, or certifications
+- DO NOT change the meaning or facts of any bullet — only the language
+- DO NOT remove bullets or add new ones
+- DO NOT remove real metrics or numbers
+- Keep the same JSON structure exactly
+- If a bullet is already natural-sounding, leave it alone
+
+Respond with ONLY the humanized JSON object (no markdown, no backticks, no commentary). Same format as input.`;
+
+  const response = await fetch("/api/claude", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      model: "claude-sonnet-4-20250514",
+      max_tokens: 4096,
+      messages: [{ role: "user", content: humanizePrompt }]
     })
   });
   const data = await response.json();
